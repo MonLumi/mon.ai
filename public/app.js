@@ -1351,7 +1351,7 @@ function clientPanelHtml(org, info, { compact = false } = {}) {
     ? zones.map((z) => `<div class="repo-name" style="padding:3px 0"><a class="btn small cf-btn" href="${esc(z.dashUrl)}" target="_blank" rel="noopener" data-cfopen="${esc(z.id)}">${CF_ICON}<span>Dashboard</span></a><span class="mono" style="font-size:12px">${esc(z.name)}</span></div>`).join('')
     : '<div class="sub">No zones linked.</div>';
   const repoList = repos.length
-    ? repos.map((r) => `<div style="padding:3px 0"><div class="repo-name">${vscodeBtn(r.path)}<b>${esc(r.name)}</b>${compact ? '' : ` <span class="pill">${esc(r.branch || '?')}</span>`} ${r.changes ? `<span class="pill amber">${r.changes} changed</span>` : ''}</div>${compact ? '' : `<div class="sub mono">${esc(r.path)}</div>`}</div>`).join('')
+    ? repos.map((r) => `<div style="padding:3px 0"><div class="repo-name">${vscodeBtn(r.path)}${pullBtn(r)}<b>${esc(r.name)}</b>${compact ? '' : ` <span class="pill">${esc(r.branch || '?')}</span>`} ${r.changes ? `<span class="pill amber">${r.changes} changed</span>` : ''}</div>${compact ? '' : `<div class="sub mono">${esc(r.path)}</div>`}</div>`).join('')
     : '<div class="sub">No repositories for this client.</div>';
   return `<div class="card"><h2>Azure &amp; DevOps</h2>${azure}</div>
     <div class="card"><h2>Cloudflare</h2>${zoneList}</div>
@@ -1656,7 +1656,7 @@ async function reposPage() {
     $('#repoBody').innerHTML = `${(d.missingRoots || []).map((r) => `<div class="notice">Root not found: ${esc(r)}</div>`).join('')}` + (orgs.map(([org, list]) => `
       <div class="card" style="margin-bottom:14px"><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2 style="margin:0">${esc(org)}</h2>
         <span class="sub" title="${act[org] ? esc(new Date(act[org].at).toLocaleString()) : ''}">${act[org] ? `Your last action ${ago(act[org].at)} · ${esc(act[org].label)}` : 'No activity from you yet'}</span></div><table><tr><th>Repo</th><th>Branch</th><th>State</th><th>Last commit</th></tr>
-      ${list.map((r) => `<tr><td><div class="repo-name">${vscodeBtn(r.path)}<b>${esc(r.name)}</b></div><div class="sub mono">${esc(r.path)}</div></td><td><span class="pill blue">${esc(r.branch || '?')}</span></td>
+      ${list.map((r) => `<tr><td><div class="repo-name">${vscodeBtn(r.path)}${pullBtn(r)}<b>${esc(r.name)}</b></div><div class="sub mono">${esc(r.path)}</div></td><td><span class="pill blue">${esc(r.branch || '?')}</span></td>
         <td>${r.error ? `<span class="pill red">${esc(r.error)}</span>` : `${r.changes ? `<span class="pill amber">${r.changes} changed</span>` : '<span class="pill green">clean</span>'} ${r.ahead ? `<span class="pill">↑${r.ahead}</span>` : ''} ${r.behind ? `<span class="pill">↓${r.behind}</span>` : ''}`}</td>
         <td>${r.last ? `${esc(r.last.subject)}<div class="sub">${esc(r.last.author)} · ${ago(r.last.date)}</div>` : ''}</td></tr>`).join('')}</table></div>`).join('') || '<div class="empty">No repositories found. Set your repo roots in <a href="#/settings/general">Settings → General</a>.</div>');
   };
@@ -1780,6 +1780,7 @@ function describeTool(t) {
     case 'ado_query': return { icon: '📋', label: 'Azure DevOps query', detail: short(`${i.org || ''} ${i.wiql || ''}`) };
     case 'ado_my_work': return { icon: '📋', label: 'My Azure DevOps work', detail: i.org || '' };
     case 'git_repos': return { icon: '⎇', label: 'Listing repositories', detail: i.org || '' };
+    case 'offer_git_pull': return { icon: '⎇', label: 'Checking for new commits', detail: short(lastPart(i.repo || '')) };
     case 'git_log': return { icon: '⎇', label: 'Reading git history', detail: short(lastPart(i.repo || i.path)) };
     case 'propose_plan': return { icon: '📝', label: 'Writing a plan', detail: short(i.title || '') };
     case 'Read': return { icon: '📄', label: `Reading ${lastPart(i.file_path)}`, detail: short(i.file_path, 90) };
@@ -2045,11 +2046,75 @@ document.addEventListener('click', async (e) => {
   } catch (err) { toast(err.message); }
 });
 
+// ---------- Git pull (fast-forward only): repo lists and chat cards ----------
+// Same button everywhere: [data-git-pull=path]. The chat card (offer_git_pull) adds a Continue button.
+function pullBtn(r) {
+  if (!r?.path || r.error) return '';
+  const behind = r.behind ? ` ↓${r.behind}` : '';
+  return `<button type="button" class="btn small pull-btn${r.behind ? ' behind' : ''}" data-git-pull="${esc(r.path)}" title="git pull --ff-only on ${esc(r.branch || 'the current branch')}${r.behind ? ` (${r.behind} commit${r.behind === 1 ? '' : 's'} behind at the last fetch)` : ''}. Never merges or rebases.">↓ Pull${behind}</button>`;
+}
+
+function pullCards(list = []) {
+  return list.map((pc) => {
+    const state = pc.behind ? `${pc.behind} new commit${pc.behind === 1 ? '' : 's'} on ${esc(pc.upstream || 'the remote')}` : pc.upstream ? `Up to date with ${esc(pc.upstream)} at the last fetch` : 'No upstream branch to pull from';
+    return `<div class="pull-card" data-pull="${esc(JSON.stringify(pc))}">
+    <div class="signin-main">
+      <span class="signin-icon">⎇</span>
+      <div><div class="signin-title">Pull latest · ${esc(pc.name)} <span class="pill blue">${esc(pc.branch || '?')}</span></div>
+      <div class="signin-sub" data-pull-msg>${state}.${pc.changes ? ` ${pc.changes} uncommitted change${pc.changes === 1 ? '' : 's'} (kept; the pull stops if they would be overwritten).` : ''}${pc.why ? `<br>${esc(pc.why)}` : ''}</div></div>
+    </div>
+    <div class="signin-actions">
+      <button type="button" class="btn small pull-btn${pc.behind ? ' behind' : ''}" data-git-pull="${esc(pc.path)}" ${pc.upstream ? '' : 'disabled'} title="git pull --ff-only. Never merges or rebases.">↓ Pull${pc.behind ? ` ${pc.behind}` : ''}</button>
+      <button type="button" class="btn small primary" data-pull-continue hidden>↻ Continue</button>
+    </div>
+  </div>`;
+  }).join('');
+}
+
+document.addEventListener('click', async (e) => {
+  const cont = e.target.closest('[data-pull-continue]');
+  if (cont) {
+    const pc = JSON.parse(cont.closest('.pull-card').dataset.pull);
+    const box = document.querySelector('#input');
+    if (!box || !document.querySelector('#composer')) return;
+    edSet(box, `I've pulled the latest ${pc.name} (${pc.branch}). Please continue.`);
+    document.querySelector('#composer').requestSubmit();
+    return;
+  }
+  const btn = e.target.closest('[data-git-pull]');
+  if (!btn || btn.disabled) return;
+  const repo = btn.dataset.gitPull;
+  const same = () => [...document.querySelectorAll('[data-git-pull]')].filter((b) => b.dataset.gitPull === repo);
+  const label = new Map(same().map((b) => [b, b.innerHTML]));
+  for (const b of same()) { b.disabled = true; b.innerHTML = '<span class="spinner"></span> Pulling…'; }
+  try {
+    const r = await api('/api/repos/pull', { method: 'POST', body: { path: repo } });
+    const what = r.upToDate ? `${r.name}: already up to date` : `${r.name}: pulled ${r.count} commit${r.count === 1 ? '' : 's'} (${r.from} → ${r.to})`;
+    toast(what);
+    for (const b of same()) { b.className = 'btn small pull-btn done'; b.textContent = r.upToDate ? '✓ Up to date' : `✓ Pulled ${r.count}`; b.disabled = false; }
+    for (const card of document.querySelectorAll('.pull-card')) {
+      if (JSON.parse(card.dataset.pull).path !== repo) continue;
+      card.classList.add('ok');
+      card.querySelector('[data-pull-msg]').innerHTML = `${esc(what)}.${r.commits?.length ? `<ul class="pull-commits">${r.commits.slice(0, 8).map((c) => `<li class="mono">${esc(c)}</li>`).join('')}${r.count > 8 ? `<li class="sub">…and ${r.count - 8} more</li>` : ''}</ul>` : ''}`;
+      card.querySelector('[data-pull-continue]').hidden = false;
+    }
+    invalidate('repos');
+    if (state.route.name === 'repos') setTimeout(reposPage, 1500); // let the ✓ show first
+  } catch (err) {
+    toast(err.message);
+    for (const b of same()) { b.disabled = false; b.innerHTML = label.get(b) || '↓ Pull'; }
+    for (const card of document.querySelectorAll('.pull-card')) {
+      if (JSON.parse(card.dataset.pull).path === repo) card.querySelector('[data-pull-msg]').textContent = err.message;
+    }
+  }
+});
+
 function assistantHtml(c, models, running = false) {
   const { body, next } = running ? { body: c.text, next: [] } : splitNext(c.text);
   return `${workLog(c, running)}
     <div class="body md">${body ? md(body) : running && !c.plan ? '<span class="typing"><span></span><span></span><span></span></span>' : ''}</div>
     ${signinCards(c.signins)}
+    ${pullCards(c.pulls)}
     ${planCard(c.plan)}
     ${next.length ? `<div class="next-steps"><div class="next-title">Next actions <span class="sub">pick one; it runs as the next message with that skill's model</span></div>${next.map((n, i) => `<button type="button" class="next-btn ${i === 0 ? 'primary' : ''}" data-next="${esc(n.cmd)}" title="Send ${esc(n.cmd)}">
         <span class="next-cmd">▶ ${esc(n.cmd.split(/\s+/)[0])}<span class="next-args">${esc(n.cmd.split(/\s+/).slice(1).join(' '))}</span></span>${n.why ? `<span class="next-why">${esc(n.why)}</span>` : ''}</button>`).join('')}</div>` : ''}
@@ -2455,15 +2520,15 @@ async function chatPage(id, opts = {}) {
     }
     inner.insertAdjacentHTML('beforeend', `${userMsgHtml({ text, attachments: atts })}<div class="msg assistant"></div>`);
     const box = inner.lastElementChild;
-    const live = { segments: [''], tools: [], signins: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
+    const live = { segments: [''], tools: [], signins: [], pulls: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
     const nearBottom = () => msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
     const paint = (running) => {
       const stick = nearBottom();
       const parts = live.segments.map((x) => x.trim()).filter(Boolean);
       const lastOpen = live.segments.at(-1).trim();
       const c = running
-        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, signins: live.signins, plan: live.plan, startedAt: live.startedAt }
-        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, signins: live.signins, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
+        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, signins: live.signins, pulls: live.pulls, plan: live.plan, startedAt: live.startedAt }
+        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, signins: live.signins, pulls: live.pulls, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
       // the step list stays as you left it (open or closed) while it runs, and folds up when done
       const was = box.querySelector('.worklog')?.open;
       box.innerHTML = assistantHtml(c, models, running) + live.errors.join('');
@@ -2496,6 +2561,7 @@ async function chatPage(id, opts = {}) {
           else if (type === 'tool') live.tools.push(data);
           else if (type === 'plan') live.plan = data;
           else if (type === 'signin') live.signins.push(data);
+          else if (type === 'pull') live.pulls = [...live.pulls.filter((x) => x.path !== data.path), data];
           else if (type === 'tool_result') Object.assign(live.tools.find((x) => x.id === data.id) || {}, data);
           else if (type === 'model') { live.model = data.model; live.effort = data.effort; live.skill = data.skill; }
           else if (type === 'error') live.errors.push(`<div class="notice err" style="margin-top:8px">${esc(data.message)}${/auth|login/i.test(data.message) ? ' · <a href="#/settings/claude">Sign in to Claude</a>' : ''}</div>`);
@@ -3251,8 +3317,9 @@ const fmtTok = (n) => (n == null ? '–' : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 
 const fmtCost = (c) => (c == null ? '–' : '$' + (c >= 10 ? c.toFixed(1) : c.toFixed(2)));
 // Usage range: today · this work week (from Monday) · last 7 / 30 days · custom dates · all.
 // Changing it only re-reads local data (transcripts + database): no model call, no tokens.
-const USAGE_RANGES = [['today', 'Today'], ['week', 'This week'], ['7', '7 days'], ['30', '30 days'], ['custom', 'Custom'], ['all', 'All']];
-const usage$ = { range: '7', from: '', to: '' };
+const USAGE_RANGES = [['session', '5h session'], ['today', 'Today'], ['week', 'This week'], ['7', '7 days'], ['30', '30 days'], ['custom', 'Custom'], ['all', 'All']];
+const usage$ = { range: '7', from: '', to: '', session: '', app: '' }; // app: '' = all apps, or 'mon.ai', 'Claude Desktop', 'VS Code', … // session: start time of the picked 5-hour session ('' = current)
+let usageSessions = null; // [{ start, end, current, cost, turns, ... }] newest first
 try {
   Object.assign(usage$, JSON.parse(localStorage.getItem('mon.usageRange') || '{}'));
   if (!USAGE_RANGES.some(([k]) => k === usage$.range)) usage$.range = ({ 0: 'all', 30: '30' })[localStorage.getItem('mon.usageDays')] || '7'; // older setting
@@ -3264,6 +3331,12 @@ function usageQuery() {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const fmtD = (d) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   switch (usage$.range) {
+    case 'session': {
+      const list = usageSessions || [];
+      const w = list.find((x) => x.start === usage$.session) || list[0];
+      if (!w) return { q: `from=${encodeURIComponent(new Date(Date.now() - 5 * 3600e3).toISOString())}`, label: 'last 5 hours' };
+      return { q: `from=${encodeURIComponent(w.start)}&to=${encodeURIComponent(w.end)}`, label: sessionLabel(w) };
+    }
     case 'today': return { q: `from=${encodeURIComponent(today.toISOString())}`, label: 'today' };
     case 'week': {
       const mon = new Date(today); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
@@ -3280,6 +3353,29 @@ function usageQuery() {
     }
     default: return { q: 'days=7', label: 'last 7 days' };
   }
+}
+/** "Now · 15:30–20:30 (2h 10m left)" or "Tue 25 Nov · 10:00–15:00". */
+function sessionLabel(w) {
+  const t = (iso) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  if (w.current) { const left = Math.max(0, Date.parse(w.end) - Date.now()); return `current session · ${t(w.start)}–${t(w.end)} (${Math.floor(left / 3600e3)}h ${String(Math.floor(left / 60e3) % 60).padStart(2, '0')}m left)`; }
+  return `${new Date(w.start).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} · ${t(w.start)}–${t(w.end)}`;
+}
+async function loadUsageSessions() {
+  const r = await api('/api/usage/sessions').catch(() => null);
+  usageSessions = r?.sessions || [];
+  if (usage$.session && !usageSessions.some((x) => x.start === usage$.session)) usage$.session = '';
+  return usageSessions;
+}
+/** The session picker and the "5-hour sessions" comparison list (Session range only). */
+function drawSessionPicker() {
+  const sel = $('#usSessionSel'), box = $('#usSessions');
+  if (!sel || !box) return;
+  const list = usageSessions || [];
+  const cur = list.find((x) => x.start === usage$.session) || list[0];
+  sel.innerHTML = list.map((w) => `<option value="${esc(w.start)}" ${w === cur ? 'selected' : ''}>${esc(sessionLabel(w))} · ${fmtCost(w.cost)}</option>`).join('') || '<option>No sessions yet</option>';
+  const max = Math.max(0.01, ...list.map((w) => w.cost));
+  box.innerHTML = list.length ? `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">5-hour sessions</h2><span class="sub">mon.ai chats only · earlier windows are rebuilt from the call times, so their edges are approximate</span></div>
+    <div class="us-sessions">${list.slice(0, 20).map((w) => `<button type="button" class="us-sess ${w === cur ? 'active' : ''} ${w.current ? 'now' : ''}" data-sess="${esc(w.start)}"><span class="us-sess-when">${esc(sessionLabel(w))}</span><span class="usage-bar"><i style="width:${Math.round((w.cost / max) * 100)}%"></i></span><b>${fmtCost(w.cost)}</b><span class="sub">${w.turns} msg${w.turns === 1 ? '' : 's'}</span></button>`).join('')}</div></div>` : '';
 }
 const saveUsageRange = () => { try { localStorage.setItem('mon.usageRange', JSON.stringify(usage$)); } catch { /* ignore */ } };
 
@@ -3299,11 +3395,14 @@ function drawPlanCard() {
 
 async function usagePage() {
   view.innerHTML = `<div class="page-head"><div><h1>Claude usage</h1>
-      <div class="sub">What mon.ai's chats use, read from Claude Code's transcripts. <b>Cost</b> is the API-equivalent price Claude Code reports: a fair measure of how much of your plan something uses (the plan itself isn't billed per token).</div></div>
+      <div class="sub">What mon.ai, Claude Desktop (Code tab), VS Code and the claude CLI use on this machine, read from Claude Code's transcripts. <b>Cost</b> is the API-equivalent price Claude Code reports: a fair measure of how much of your plan something uses (the plan itself isn't billed per token).</div></div>
     <div class="row us-range-row"><div class="seg" id="usRange" title="Changing the range re-reads local data only: it uses no tokens">${USAGE_RANGES.map(([k, l]) => `<button data-range="${k}" class="${k === usage$.range ? 'active' : ''}">${l}</button>`).join('')}</div>
+      <span class="us-custom" id="usSession" ${usage$.range === 'session' ? '' : 'hidden'}><select id="usSessionSel" class="select" title="Which 5-hour session"><option>Loading…</option></select></span>
       <span class="us-custom" id="usCustom" ${usage$.range === 'custom' ? '' : 'hidden'}><input type="date" id="usFrom" value="${esc(usage$.from)}" max="${ymd(new Date())}" title="From (included)"><span class="sub">to</span><input type="date" id="usTo" value="${esc(usage$.to)}" max="${ymd(new Date())}" title="To (included; empty = today)"></span>
       <button class="btn" id="usRefresh" title="Re-read the transcripts and the plan limits">↻ Refresh</button></div></div>
     <div class="grid us-top"><div class="card"><h2>Plan limits</h2><div id="usPlan"></div></div><div class="grid kpis us-kpis" id="usKpis"></div></div>
+    <div class="us-apps" id="usApps"></div>
+    <div id="usSessions" ${usage$.range === 'session' ? '' : 'hidden'}></div>
     <div id="usHints"></div>
     <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Cost per day, by model</h2><div class="us-legend" id="usLegend"></div></div><div class="us-chart" id="usChart"></div></div>
     <div class="grid us-tables" id="usTables"><div class="sub">Loading…</div></div>`;
@@ -3317,6 +3416,7 @@ async function usagePage() {
     saveUsageRange();
     $('#usRange').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
     $('#usCustom').hidden = usage$.range !== 'custom';
+    $('#usSession').hidden = $('#usSessions').hidden = usage$.range !== 'session';
     $('#usFrom').value = usage$.from; $('#usTo').value = usage$.to;
     drawUsageData();
   };
@@ -3326,6 +3426,15 @@ async function usagePage() {
     saveUsageRange(); drawUsageData();
   };
   $('#usFrom').onchange = onDates; $('#usTo').onchange = onDates;
+  const pickSession = (start) => {
+    usage$.session = (usageSessions || []).find((x) => x.start === start)?.current ? '' : start; // the current one follows into the next session
+    saveUsageRange(); drawSessionPicker(); drawUsageData();
+  };
+  $('#usSessionSel').onchange = (e) => pickSession(e.target.value);
+  const pickApp = (e) => { const b = e.target.closest('[data-app]'); if (!b) return; usage$.app = b.dataset.app; saveUsageRange(); drawUsageData(); };
+  $('#usApps').onclick = pickApp;
+  $('#usTables').addEventListener('click', pickApp); // the app names in the By app table
+  $('#usSessions').onclick = (e) => { const b = e.target.closest('[data-sess]'); if (b) pickSession(b.dataset.sess); };
   $('#usRefresh').onclick = async (e) => {
     e.target.disabled = true;
     try { await api('/api/usage/refresh', { method: 'POST', body: {} }); await loadUsage(true); await drawUsageData(); } catch (err) { toast(err.message); }
@@ -3335,10 +3444,15 @@ async function usagePage() {
 }
 
 async function drawUsageData() {
-  const { q, label } = usageQuery();
   const seq = (drawUsageData.seq = (drawUsageData.seq || 0) + 1); // a quicker later click wins
-  const d = await api(`/api/usage?${q}`);
+  if (usage$.range === 'session') { await loadUsageSessions(); if (seq !== drawUsageData.seq) return; drawSessionPicker(); }
+  const { q, label } = usageQuery();
+  const d = await api(`/api/usage?${q}${usage$.app ? `&source=${encodeURIComponent(usage$.app)}` : ''}`);
   if (seq !== drawUsageData.seq || state.route.name !== 'usage' || !$('#usKpis')) return;
+  // which app: all of them, or one (mon.ai, Claude Desktop, VS Code, the claude CLI)
+  const apps = d.sources.map((x) => x.source);
+  if (usage$.app && !apps.includes(usage$.app)) apps.push(usage$.app);
+  $('#usApps').innerHTML = `<span class="sub">App</span><div class="seg">${[['', 'All apps'], ...apps.map((a) => [a, a])].map(([k, l]) => `<button data-app="${esc(k)}" class="${k === usage$.app ? 'active' : ''}">${esc(l)}</button>`).join('')}</div><span class="sub">Claude Desktop (Code tab), VS Code and the claude CLI are read from their local transcripts. claude.ai chats keep none, so they aren't counted.${d.estimated ? ' Some costs are estimated (sessions without a cost record).' : ''}</span>`;
   const t = d.totals;
   $('#usKpis').innerHTML = [
     ['Cost', fmtCost(t.cost), `${label} · API-equivalent`],
@@ -3387,9 +3501,11 @@ async function drawUsageData() {
         <td class="n us-cost">${fmtCost(r.cost)}<span class="us-share"><i style="width:${totalCost && r.cost ? Math.max(2, (r.cost / totalCost) * 100) : 0}%"></i></span></td></tr>`).join('')}</table>` : '<div class="sub">Nothing in this period.</div>'}</div>`;
   $('#usTables').innerHTML = [
     `<div class="card us-table us-wide" id="usChats"></div>`,
+    usage$.app ? '' : table('By app', d.bySource, { first: 'App', link: (r) => `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">${esc(r.label)}</button>` }),
+    d.byProject.length ? table('Other apps by folder', d.byProject, { first: 'App · folder', note: 'Claude Desktop, VS Code and CLI sessions, by the folder they ran in' }) : '',
     table('By skill', d.bySkill, { first: 'Skill', link: (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), note: 'the /skill a message ran (or the first one it used)' }),
     table('By model', d.byModel.map((r) => ({ ...r, label: r.label.replace(/^claude-/, '') })), { first: 'Model' }),
-    table('By client', d.byClient, { first: 'Client', link: (r) => (r.key ? `<a href="#/org/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)) }),
+    table('By client', d.byClient, { first: 'Client', note: 'mon.ai chats', link: (r) => (r.key ? `<a href="#/org/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)) }),
     `<div class="card us-table us-wide"><h2>Most expensive messages</h2>${d.topTurns.length ? `<table>
       <tr><th>Message</th><th class="tight">Skill</th><th class="n">Calls</th><th class="n">Tokens</th><th class="n">Cost</th><th class="n">When</th></tr>
       ${d.topTurns.map((r) => `<tr><td class="us-name">${r.chatId ? `<a href="#/chat/${esc(r.chatId)}" title="${esc(r.chatTitle || '')}">${esc(r.text.slice(0, 110))}</a>` : esc(r.text.slice(0, 110))}${r.models?.length ? `<span class="us-models">${r.models.filter((f) => f !== 'other').map((f) => `<i class="sw m-${f}" title="${famLabel(f)}"></i>`).join('')}</span>` : ''}</td>
@@ -3414,14 +3530,14 @@ function drawChatUsage(chats, totalCost) {
       ${mini('Skills', c.bySkill, (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : `<span class="sub">${esc(r.label)}</span>`))}
       <div class="us-mini us-mini-wide"><h3>Costliest messages</h3><table>${c.messages.map((m) => `<tr><td class="us-name">${esc(m.text.slice(0, 120))}${m.skill && !m.text.startsWith(`/${m.skill}`) ? ` <span class="pill">/${esc(m.skill)}</span>` : ''}</td><td class="n">${m.calls} call${m.calls === 1 ? '' : 's'}</td><td class="n">${fmtTok(m.tokens)}</td><td class="n us-cost">${fmtCost(m.cost)}</td><td class="n sub">${ago(m.at)}</td></tr>`).join('')}</table></div>
     </div></td></tr>`;
-  el.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="margin:0">By chat <span class="sub">${chats.length} chat${chats.length === 1 ? '' : 's'} · click one to see its models, skills and messages</span></h2>
+  el.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="margin:0">By chat / session <span class="sub">${chats.length} chat${chats.length === 1 ? '' : 's'} · click one to see its models, skills and messages</span></h2>
       <div class="seg" id="usChatTop">${[[10, 'Top 10'], [20, '20'], [50, '50'], [100, '100'], [0, 'All']].map(([n, l]) => `<button data-top="${n}" class="${n === usChatTop ? 'active' : ''}">${l}</button>`).join('')}</div></div>
     ${shown.length ? `<table>
       <tr><th>Chat</th><th class="n">Msgs</th><th class="n" title="Tokens the model wrote">Output</th><th class="n" title="All tokens: input, output, cache read and write">Tokens</th><th class="n">Per msg</th><th class="n">Cost</th></tr>
-      ${shown.map((c) => `<tr class="us-chat-row ${usExpanded.has(c.chatId) ? 'open' : ''}" data-chat="${esc(c.chatId)}">
-          <td class="us-name"><span class="us-caret">${usExpanded.has(c.chatId) ? '▾' : '▸'}</span>${c.chatId ? `<a href="#/chat/${esc(c.chatId)}">${esc(c.label)}</a>` : esc(c.label)}${c.org ? ` <span class="sub">· ${esc(c.org)}</span>` : ''}${dots(c.models)}</td>
+      ${shown.map((c) => `<tr class="us-chat-row ${usExpanded.has(c.key) ? 'open' : ''}" data-chat="${esc(c.key)}">
+          <td class="us-name"><span class="us-caret">${usExpanded.has(c.key) ? '▾' : '▸'}</span>${c.chatId ? `<a href="#/chat/${esc(c.chatId)}">${esc(c.label)}</a>` : esc(c.label)}${c.org ? ` <span class="sub">· ${esc(c.org)}</span>` : ''}${c.source && c.source !== 'mon.ai' ? ` <span class="pill us-app" title="${esc(c.project || '')}">${esc(c.source)}</span>` : ''}${dots(c.models)}</td>
           <td class="n">${c.turns}</td><td class="n">${fmtTok(c.output)}</td><td class="n">${fmtTok(c.tokens)}</td><td class="n">${fmtCost(c.costPerTurn)}</td><td class="n us-cost">${fmtCost(c.cost)}${share(c.cost, totalCost)}</td></tr>
-        ${usExpanded.has(c.chatId) ? detail(c) : ''}`).join('')}</table>
+        ${usExpanded.has(c.key) ? detail(c) : ''}`).join('')}</table>
       ${usChatTop && chats.length > usChatTop ? `<div class="sub" style="margin-top:8px">${chats.length - usChatTop} more · pick a bigger number or All above</div>` : ''}` : '<div class="sub">Nothing in this period.</div>'}`;
   el.onclick = (e) => {
     const top = e.target.closest('[data-top]');

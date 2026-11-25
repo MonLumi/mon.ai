@@ -194,6 +194,8 @@ app.get('/api/azure/:org/ado', wrap(async (req) => {
 // ---------- Git ----------
 app.get('/api/repos', wrap(() => git.list()));
 app.post('/api/repos/scan', wrap(() => git.scan()));
+app.post('/api/repos/pull', wrap((req) => git.pull(String(req.body.path || ''))));
+app.post('/api/repos/check', wrap((req) => git.checkBehind(String(req.body.path || ''))));
 app.post('/api/repos/open', wrap((req) => git.openInVSCode(String(req.body.path || ''))));
 
 // ---------- Settings (hot-reloaded) ----------
@@ -210,7 +212,12 @@ app.put('/api/config/:name', wrap((req) => {
 // ---------- Claude (subscription login) ----------
 app.get('/api/claude/auth', wrap(() => assistant.authStatus()));
 // Token usage analysis (Usage page): by skill, ticket, client, chat, model, day.
-app.get('/api/usage', wrap((req) => usage.analysis({ days: Math.max(0, Math.min(365, Number(req.query.days ?? 7) || 0)), from: req.query.from ? String(req.query.from) : null, to: req.query.to ? String(req.query.to) : null })));
+// 5-hour plan sessions with what mon.ai used in each (the plan only tells us when the current one resets)
+app.get('/api/usage/sessions', wrap(async () => {
+  const plan = await assistant.planUsage().catch(() => null);
+  return { sessions: usage.sessions({ resetsAt: plan?.session?.resetsAt || null }), plan: plan?.session || null };
+}));
+app.get('/api/usage', wrap((req) => usage.analysis({ days: Math.max(0, Math.min(365, Number(req.query.days ?? 7) || 0)), from: req.query.from ? String(req.query.from) : null, to: req.query.to ? String(req.query.to) : null, source: req.query.source ? String(req.query.source).slice(0, 60) : null })));
 app.post('/api/usage/refresh', wrap(() => ({ calls: usage.ingestAll() })));
 app.get('/api/usage/chat/:id', wrap((req) => usage.chatSummary(req.params.id)));
 app.get('/api/claude/usage', wrap((req) => assistant.planUsage({ fresh: req.query.fresh === '1' })));
@@ -268,6 +275,8 @@ app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(import.meta.dirn
 const startJobs = () => {
   skills.seed();
   setTimeout(() => { try { console.log(`[usage] read ${usage.ingestAll()} model calls from chat transcripts`); } catch (e) { console.error('[usage]', e.message); } }, 2000);
+  // Claude Desktop / VS Code / CLI sessions: pick up new activity every 2 minutes (unchanged files are skipped)
+  setInterval(() => { try { if (usage.ingestExternal()) bus.emit('event', { type: 'usage:updated', data: {} }); } catch (e) { console.error('[usage]', e.message); } }, 120_000);
   zendesk.boot();
   git.scan().catch((e) => console.error('[git]', e.message));
 };
