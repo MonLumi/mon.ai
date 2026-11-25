@@ -1,0 +1,28 @@
+{
+  "edgePath": "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "defaultAccount": "",
+  "profiles": [
+    {
+      "org": "YourOrganization",
+      "tenantId": "",
+      "subscriptions": {
+        "prod": "",
+        "nonprod": ""
+      },
+      "subscriptionNames": {
+        "prod": "",
+        "nonprod": ""
+      },
+      "edgeProfile": "Default",
+      "account": "",
+      "vpn": {
+        "required": false
+      },
+      "ado": {
+        "orgUrl": "",
+        "project": "",
+        "tenantId": ""
+      }
+    }
+  ]
+}

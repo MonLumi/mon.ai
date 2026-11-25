@@ -1,0 +1,18 @@
+{
+  "repoRoots": [],
+  "scanDepth": 3,
+  "assistant": {
+    "model": "default",
+    "effort": "medium"
+  },
+  "clientZones": {},
+  "ignore": [
+    "node_modules",
+    "bin",
+    "obj",
+    ".vs",
+    "dist",
+    "build"
+  ],
+  "orgAliases": {}
+}
