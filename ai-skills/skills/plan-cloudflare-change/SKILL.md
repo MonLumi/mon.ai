@@ -1,6 +1,6 @@
 ---
-name: actions-cloudflare
-description: Plan Cloudflare changes on my behalf and show them as a plan card: add or change WAF custom rules, skip / exception rules, managed-rule overrides, rate limits, IP access rules, DNS records, cache purges and zone settings. Use when I ask you to allow, unblock, block, whitelist, purge or change something in Cloudflare. Not for Azure Front Door (azure-actions), code (git-actions) or tickets (zendesk-actions).
+name: plan-cloudflare-change
+description: Plan Cloudflare changes on my behalf and show them as a plan card: add or change WAF custom rules, skip / exception rules, managed-rule overrides, rate limits, IP access rules, DNS records, cache purges and zone settings. Use when I ask you to allow, unblock, block, whitelist, purge or change something in Cloudflare. Not for Azure Front Door (plan-azure-change), code (plan-code-change) or tickets (plan-ticket-change).
 mon-model: opus
 mon-effort: medium
 mon-category: Actions
@@ -8,7 +8,7 @@ mon-category: Actions
 
 # Cloudflare actions
 
-Input: the client or zone and what I want changed, e.g. `/cf-actions QBE allow Dynatrace to /api/health` or `/cf-actions ACU purge cache for www.acu.edu.au/news`. Often follows `/cf-block-check`: reuse its findings from this chat (rule, ruleset, Ray IDs, IPs) instead of looking again.
+Input: the client or zone and what I want changed, e.g. `/plan-cloudflare-change QBE allow Dynatrace to /api/health` or `/plan-cloudflare-change ACU purge cache for www.acu.edu.au/news`. Often follows `/check-cf-block`: reuse its findings from this chat (rule, ruleset, Ray IDs, IPs) instead of looking again.
 
 mon.ai can't change Cloudflare yet: you **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it. Never say anything was changed.
 

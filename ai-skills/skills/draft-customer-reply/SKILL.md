@@ -1,5 +1,5 @@
 ---
-name: customer-reply
+name: draft-customer-reply
 description: Draft a reply to a customer on a Zendesk ticket in the Dataweavers support tone. Use when asked to draft, write or reply to a customer.
 mon-model: sonnet
 mon-effort: medium

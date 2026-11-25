@@ -1,6 +1,6 @@
 ---
-name: actions-zendesk
-description: Plan Zendesk ticket changes on my behalf and show them as a plan card: post a public reply or internal note, change status (open / pending / solved), re-assign (group / agent), add followers or CCs, set Category, fields or tags, log time. Use when I ask you to reply, note, update, assign, pend, solve or log time on a ticket. Only Zendesk; for Azure, Cloudflare or code changes use azure-actions, cf-actions or git-actions.
+name: plan-ticket-change
+description: Plan Zendesk ticket changes on my behalf and show them as a plan card: post a public reply or internal note, change status (open / pending / solved), re-assign (group / agent), add followers or CCs, set Category, fields or tags, log time. Use when I ask you to reply, note, update, assign, pend, solve or log time on a ticket. Only Zendesk; for Azure, Cloudflare or code changes use plan-azure-change, plan-cloudflare-change or plan-code-change.
 mon-model: sonnet
 mon-effort: medium
 mon-category: Actions
@@ -8,7 +8,7 @@ mon-category: Actions
 
 # Zendesk actions
 
-Input: a ticket number and what I want done, e.g. `/zendesk-actions 25348 tell them the fix is live and set to pending, log 15m`. In a ticket chat without a number, use that ticket.
+Input: a ticket number and what I want done, e.g. `/plan-ticket-change 25348 tell them the fix is live and set to pending, log 15m`. In a ticket chat without a number, use that ticket.
 
 mon.ai can't change tickets yet: you **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it. Never say anything was posted or changed.
 
@@ -40,7 +40,7 @@ Rules:
 - Re-assigning: use names exactly as they appear on the ticket or in earlier comments; if you can't find the person or group, ask me.
 
 ## 3. Writing the reply or note
-- **Public reply**: same rules as `/customer-reply`: greet the requester by first name; friendly, clear, Australian English; what we found or did → what happens next (time frame if known) → what we need from them. Link any ticket you reference. No internal details (tenant IDs, rule IDs, internal tools, colleagues' chat). No sign-off.
+- **Public reply**: same rules as `/draft-customer-reply`: greet the requester by first name; friendly, clear, Australian English; what we found or did → what happens next (time frame if known) → what we need from them. Link any ticket you reference. No internal details (tenant IDs, rule IDs, internal tools, colleagues' chat). No sign-off.
 - **Internal note**: short and factual for a colleague: what was checked, the finding with evidence (Ray ID, resource, time in UTC and AEST/AEDT), what's next and who owns it.
 - Plain text, verbatim, ready to post. No placeholders; anything unknown goes in `assumptions`.
 

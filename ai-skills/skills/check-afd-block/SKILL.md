@@ -1,5 +1,5 @@
 ---
-name: afd-block-check
+name: check-afd-block
 description: Find out why Azure Front Door (AFD) or its WAF blocks a request (403 'The request is blocked', managed or custom rule, rate limit, geo or IP filter) from a tracking reference (x-azure-ref), URI, client IP or user agent, time window or only a block-page screenshot, then identify the policy and rule, what matched, who else is affected and the safe fix. Use when asked why Front Door, AFD or Azure WAF is blocking a request, a reference ID, an IP, a URL or a page.
 mon-model: sonnet
 mon-effort: medium
@@ -25,7 +25,7 @@ Any of the following (at least one):
 1. **Normalise the input** into: host, URI, client IP, user agent, UTC time window and tracking ref.
    - **Screenshot only:** extract every visible string, then decide which layer blocked the request:
      - 'The request is blocked.' plus a long reference (e.g. `20261124T031522Z-...`), or a branded page with a reference ID: **AFD WAF**. Continue.
-     - 'Ray ID', 'Cloudflare', 'Attention Required' or 1020: **Cloudflare**. Stop and use `/cf-block-check`.
+     - 'Ray ID', 'Cloudflare', 'Attention Required' or 1020: **Cloudflare**. Stop and use `/check-cf-block`.
      - 'Error 403 - Forbidden. The web app you have attempted to reach has blocked your access.': **App Service access restrictions** (often a missing or wrong `X-Azure-FDID`, or an IP rule). Check with `azure_cli` `webapp config access-restriction show`.
      - 'Our services aren't available right now', or a 4xx/5xx with a ref: AFD routing or origin error, not the WAF. Check `httpStatusDetails_s` and `errorInfo_s` in the access log.
    - **Ref to time:** a new-style ref starts with the UTC timestamp (`20261124T031522Z` = 2026-11-24 03:15:22 UTC). Query ±15 min around it. A legacy ref without a timestamp needs 24h–7d, so ask for the approximate time.
@@ -72,4 +72,4 @@ Any of the following (at least one):
 - **Assessment:** false or true positive, and why.
 - **Fix:** the exact command or portal steps for the narrowest option, plus the rollback, and any impact on shared policies.
 - **Gaps:** missing logs, log delay or the KQL for the user to run if the CLI could not.
-- If asked, a customer update in a ```draft block (see `/customer-reply`).
+- If asked, a customer update in a ```draft block (see `/draft-customer-reply`).

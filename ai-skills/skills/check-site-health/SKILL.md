@@ -1,5 +1,5 @@
 ---
-name: health-check
+name: check-site-health
 description: Quick health check when a client site is slow, down, timing out or returning 5xx: finds any request spike on Cloudflare / Azure Front Door / App Service, checks Sitecore CD, CM, headless rendering and SQL elastic pool load at the same moment, says whether it is an attack, a client event, a bot crawl, a Sitecore publish or an unstable platform, and proposes next steps. Use when asked to check system health, look for a traffic or request spike, or explain why a site is slow or down.
 mon-model: opus
 mon-effort: medium
@@ -78,7 +78,7 @@ Run the same groupings on a baseline window and compare. Look for:
 - **Bots:** verified bots, AI crawlers (GPTBot, ClaudeBot, Bytespider).
 - **Containment:** many requests already blocked or challenged.
 
-Use `cloudflare_security_events` to sample raw events for a suspect IP, JA4 or path. For Front Door WAF blocks, hand off to `/afd-block-check`. For Cloudflare blocks, hand off to `/cf-block-check`.
+Use `cloudflare_security_events` to sample raw events for a suspect IP, JA4 or path. For Front Door WAF blocks, hand off to `/check-afd-block`. For Cloudflare blocks, hand off to `/check-cf-block`.
 
 ### 4. Platform load at the same moment
 Use `--interval PT5M` with `--aggregation Maximum Average` over the same window.
@@ -124,5 +124,5 @@ Rules:
    - **Client event:** scale out the plan with `az appservice plan update -g <rg> -n <plan> --number-of-workers <n+2>`. Raise the pool if SQL is above 80% with `az sql elastic-pool update -g <rg> -s <server> -n <pool> --capacity <next>`. Check the cache hit ratio for the hot pages. Ask the client for upcoming event dates so we can scale in advance.
    - **Crawl:** use Cloudflare bot or AI crawl controls, add a rate-limit rule, or set `crawl-delay` in robots.txt.
    - **Publish:** review CM publish history (full publish, large tree, index rebuild). Advise incremental or scheduled publishing outside peak hours.
-   - **Unstable platform:** capture logs or a memory dump first if possible. Then restart only the sick app or instance with `az webapp restart -g <rg> -n <app>`. If a deployment or swap is in the activity log, compare with the last good build and consider swapping back. Raise an incident and run `/deep-investigate`.
-5. **Customer update:** a short holding message in a draft block, in the `/customer-reply` tone.
+   - **Unstable platform:** capture logs or a memory dump first if possible. Then restart only the sick app or instance with `az webapp restart -g <rg> -n <app>`. If a deployment or swap is in the activity log, compare with the last good build and consider swapping back. Raise an incident and run `/investigate-root-cause`.
+5. **Customer update:** a short holding message in a draft block, in the `/draft-customer-reply` tone.

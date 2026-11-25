@@ -1,7 +1,7 @@
 ---
 name: plan-my-day
 description: Plan my working day from my open Zendesk tickets: order by urgency, group quick wins and give one next action each. Use when asked what to work on or to plan the day.
-mon-model: sonnet
+mon-model: haiku
 mon-effort: medium
 mon-category: Planning
 ---

@@ -1,5 +1,5 @@
 ---
-name: cf-block-check
+name: check-cf-block
 description: Find out why Cloudflare blocks or challenges requests (403, 1020, captcha / managed challenge, rate limit, WAF) using Security Events: identify the rule, its expression, who and what is affected, and the safe fix. Use when asked why Cloudflare / CF / the WAF is blocking or challenging a request, a Ray ID, an IP, an API or a page.
 mon-model: sonnet
 mon-effort: medium
@@ -8,7 +8,7 @@ mon-category: Security & blocking
 
 # Cloudflare block check
 
-Input: a ticket number, Ray ID, URL, IP or client code (e.g. `/cf-block-check 25466`, `/cf-block-check a5f72d9b6cd26ba6-SYD`). If a ticket is given, read it with `zendesk_ticket` first and pull out the Ray ID(s), URL / host / path, client IP, method, error (403, 1020, challenge page, 429) and when it happened. If this chat already has the ticket, don't reload it.
+Input: a ticket number, Ray ID, URL, IP or client code (e.g. `/check-cf-block 25466`, `/check-cf-block a5f72d9b6cd26ba6-SYD`). If a ticket is given, read it with `zendesk_ticket` first and pull out the Ray ID(s), URL / host / path, client IP, method, error (403, 1020, challenge page, 429) and when it happened. If this chat already has the ticket, don't reload it.
 
 ## Steps
 
@@ -33,7 +33,7 @@ Input: a ticket number, Ray ID, URL, IP or client code (e.g. `/cf-block-check 25
 - **Fix** (for me to apply; mon.ai is read-only), the narrowest safe option first: an exception / skip rule scoped to the exact host + path + IP or ASN, a corrected expression, or a managed-rule override for that rule ID only. Give the exact expression to paste, which ruleset or phase to put it in and its position, and note prod vs non-prod and whether the change needs the client's approval. If the traffic is malicious, recommend keeping the block and explain why.
 - **Customer note**: one or two plain sentences for the reply.
 - **Next step**: end the answer with exactly one line on its own (the app shows it as a button):
-  - no matching events, or the block can't be explained by the Cloudflare rules (e.g. it may come from Front Door WAF, the origin or the app) → list what is still unknown, then `Next: /deep-investigate <ticket number>`
-  - cause found and the customer needs a reply → `Next: /customer-reply <ticket number>`
+  - no matching events, or the block can't be explained by the Cloudflare rules (e.g. it may come from Front Door WAF, the origin or the app) → list what is still unknown, then `Next: /investigate-root-cause <ticket number>`
+  - cause found and the customer needs a reply → `Next: /draft-customer-reply <ticket number>`
   - otherwise no Next line.
   If there is no ticket number, put the Ray ID or host after the skill name instead.
