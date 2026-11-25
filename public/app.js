@@ -3320,6 +3320,7 @@ const fmtCost = (c) => (c == null ? '–' : '$' + (c >= 10 ? c.toFixed(1) : c.to
 // Changing it only re-reads local data (transcripts + database): no model call, no tokens.
 const USAGE_RANGES = [['session', '5h session'], ['today', 'Today'], ['week', 'This week'], ['7', '7 days'], ['30', '30 days'], ['custom', 'Custom'], ['all', 'All']];
 const usage$ = { range: '7', from: '', to: '', session: '', app: '' }; // app: '' = all apps, or one of USAGE_APPS; session: start time of the picked 5-hour session ('' = current)
+const dimensionViews = { app: 'visual', model: 'visual' };
 let usageSessions = null; // [{ start, end, current, cost, turns, ... }] newest first
 try {
   Object.assign(usage$, JSON.parse(localStorage.getItem('mon.usageRange') || '{}'));
@@ -3435,7 +3436,24 @@ async function usagePage() {
   $('#usSessionSel').onchange = (e) => pickSession(e.target.value);
   const pickApp = (e) => { const b = e.target.closest('[data-app]'); if (!b) return; usage$.app = b.dataset.app; saveUsageRange(); drawUsageData(); };
   $('#usApps').onclick = pickApp;
-  $('#usTables').addEventListener('click', pickApp); // the app names in the By app table
+  $('#usTables').addEventListener('click', (e) => {
+    pickApp(e);
+    const trigger = e.target.closest('.us-visual-trigger');
+    if (trigger) {
+      const item = trigger.closest('.us-visual-item');
+      const open = item.classList.toggle('open');
+      trigger.setAttribute('aria-expanded', String(open));
+      return;
+    }
+    const b = e.target.closest('[data-dimension-view]');
+    if (!b) return;
+    const card = b.closest('.us-dimension');
+    const view = card.dataset.view === 'table' ? 'visual' : 'table';
+    card.dataset.view = view;
+    dimensionViews[b.dataset.dimensionView] = view;
+    b.textContent = `Show ${view === 'table' ? 'visual' : 'table'}`;
+    b.setAttribute('aria-label', `Show ${view === 'table' ? 'visual' : 'table'} view for ${b.dataset.dimensionView}`);
+  });
   $('#usSessions').onclick = (e) => { const b = e.target.closest('[data-sess]'); if (b) pickSession(b.dataset.sess); };
   $('#usRefresh').onclick = async (e) => {
     e.target.disabled = true;
@@ -3493,17 +3511,42 @@ async function drawUsageData() {
 
   // ---- breakdown tables
   const totalCost = t.cost || 0;
-  const table = (title, rows, { link, first = 'Name', note = '' } = {}) => `<div class="card us-table"><h2>${title}${note ? ` <span class="sub">${note}</span>` : ''}</h2>${rows.length ? `<table>
+  const tableContent = (rows, { link, first = 'Name' } = {}) => rows.length ? `<table>
       <tr><th>${first}</th><th class="n">Msgs</th><th class="n" title="Tokens the model wrote">Output</th><th class="n" title="All tokens: input, output, cache read and write">Tokens</th><th class="n">Per msg</th><th class="n">Cost</th></tr>
       ${rows.map((r) => `<tr><td class="us-name">${link ? link(r) : esc(r.label)}${r.models?.length ? `<span class="us-models">${r.models.filter((f) => f !== 'other').map((f) => `<i class="sw m-${f}" title="${famLabel(f)}"></i>`).join('')}</span>` : ''}</td>
         <td class="n">${r.turns}</td><td class="n">${fmtTok(r.output)}</td><td class="n">${fmtTok(r.tokens)}</td><td class="n">${fmtCost(r.costPerTurn)}</td>
-        <td class="n us-cost">${fmtCost(r.cost)}<span class="us-share"><i style="width:${totalCost && r.cost ? Math.max(2, (r.cost / totalCost) * 100) : 0}%"></i></span></td></tr>`).join('')}</table>` : '<div class="sub">Nothing in this period.</div>'}</div>`;
+        <td class="n us-cost">${fmtCost(r.cost)}<span class="us-share"><i style="width:${totalCost && r.cost ? Math.max(2, (r.cost / totalCost) * 100) : 0}%"></i></span></td></tr>`).join('')}</table>` : '<div class="sub">Nothing in this period.</div>';
+  const table = (title, rows, options = {}) => `<div class="card us-table"><h2>${title}${options.note ? ` <span class="sub">${options.note}</span>` : ''}</h2>${tableContent(rows, options)}</div>`;
+  const dimension = (key, title, rows, options = {}) => {
+    const maxCost = Math.max(0, ...rows.map((r) => r.cost || 0));
+    const visual = rows.length ? `<div class="us-visual-list">${rows.map((r, i) => {
+      const id = `us-${key}-${i}`;
+      const label = key === 'app'
+          ? `<span class="us-visual-name">${esc(r.label)}</span>`
+        : `<span class="us-visual-name"><i class="sw m-${famOf(r.label)}"></i>${esc(r.label.replace(/^claude-/, ''))}</span>`;
+      return `<div class="us-visual-item">
+        <button type="button" class="us-visual-trigger" aria-expanded="false" aria-controls="${id}">
+          <span>${label}</span><b>${fmtCost(r.cost)}</b>
+          <span class="us-visual-track"><i class="${key === 'model' ? `m-${famOf(r.label)}` : ''}" style="width:${maxCost && r.cost ? Math.max(2, (r.cost / maxCost) * 100) : 0}%"></i></span>
+        </button>
+        <div class="us-visual-details" id="${id}">
+          <span><b>${r.turns}</b> msg${r.turns === 1 ? '' : 's'}</span><span><b>${fmtTok(r.output)}</b> output</span>
+          <span><b>${fmtTok(r.tokens)}</b> tokens</span><span><b>${fmtCost(r.costPerTurn)}</b> per msg</span>
+            ${key === 'app' ? `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">Filter app</button>` : ''}
+          </div>
+        </div>`;
+    }).join('')}</div>` : '<div class="sub">Nothing in this period.</div>';
+    return `<div class="card us-table us-dimension" data-dimension="${key}" data-view="${dimensionViews[key]}">
+      <div class="us-dimension-head"><h2>${title}</h2><button type="button" class="btn small" data-dimension-view="${key}" aria-label="Show ${dimensionViews[key] === 'table' ? 'visual' : 'table'} view for ${key}">Show ${dimensionViews[key] === 'table' ? 'visual' : 'table'}</button></div>
+      <div class="us-visual">${visual}</div><div class="us-breakdown-table">${tableContent(rows, options)}</div>
+    </div>`;
+  };
   $('#usTables').innerHTML = [
     `<div class="card us-table us-wide" id="usChats"></div>`,
-    usage$.app ? '' : table('By app', d.bySource, { first: 'App', link: (r) => `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">${esc(r.label)}</button>` }),
+    usage$.app ? '' : dimension('app', 'By app', d.bySource, { first: 'App', link: (r) => `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">${esc(r.label)}</button>` }),
     d.byProject.length ? table('Other apps by folder', d.byProject, { first: 'App · folder', note: 'Claude Desktop, VS Code and CLI sessions, by the folder they ran in' }) : '',
     table('By skill', d.bySkill, { first: 'Skill', link: (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), note: 'the /skill a message ran (or the first one it used)' }),
-    table('By model', d.byModel.map((r) => ({ ...r, label: r.label.replace(/^claude-/, '') })), { first: 'Model' }),
+    dimension('model', 'By model', d.byModel.map((r) => ({ ...r, label: r.label.replace(/^claude-/, '') })), { first: 'Model' }),
     usage$.app === 'mon.ai' ? table('By client', d.byClient, { first: 'Client', note: 'mon.ai chats', link: (r) => (r.key ? `<a href="#/org/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)) }) : '',
   ].join('');
   drawChatUsage(d.byChat, totalCost);
