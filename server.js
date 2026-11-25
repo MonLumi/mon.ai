@@ -178,6 +178,7 @@ app.post('/api/cloudflare/zones/:id/opened', wrap((req) => {
 
 // ---------- Azure / ADO ----------
 app.get('/api/azure/status', wrap((req) => azure.status({ revalidate: req.query.revalidate === '1' })));
+app.get('/api/azure/:org/check', wrap((req) => azure.checkSignIn(req.params.org, req.query.tool === 'ps' ? 'ps' : 'cli')));
 app.post('/api/azure/:org/login', wrap((req) => azure.login(req.params.org, req.body.env || 'prod', req.body.tool || 'cli')));
 app.post('/api/azure/:org/switch', wrap((req) => azure.switchSubscription(req.params.org, req.body.env || 'prod', req.body.tool || 'cli')));
 app.post('/api/azure/:org/open', wrap((req) => azure.openInEdge(req.params.org, req.body.target)));
@@ -257,7 +258,7 @@ app.post('/api/sessions/:id/messages', async (req, res) => {
   const emit = (type, data) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
   const files = Array.isArray(req.body.attachments) ? req.body.attachments.slice(0, 20).map(String) : [];
   const rewindFrom = Number.isInteger(req.body.rewindFrom) ? req.body.rewindFrom : null; // editing an earlier message
-  const skill = /^[a-z0-9][a-z0-9-]{0,62}$/.test(req.body.skill || '') ? req.body.skill : null; // e.g. Ask AI runs with /ticket-triage's model
+  const skill = /^[a-z0-9][a-z0-9-]{0,62}$/.test(req.body.skill || '') ? req.body.skill : null; // e.g. Ask AI runs with /triage-ticket's model
   try { await assistant.send(req.params.id, String(req.body.text || '').slice(0, 20_000), emit, files, { rewindFrom, skill }); } catch (e) { emit('error', { message: e.message }); }
   res.end();
 });

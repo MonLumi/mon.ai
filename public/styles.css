@@ -969,3 +969,19 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .us-custom { display: inline-flex; align-items: center; gap: 6px; }
 .us-custom[hidden] { display: none; }
 .us-custom input[type=date] { height: 30px; padding: 0 6px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); color: var(--text); font: inherit; font-size: 12.5px; }
+/* Azure sign-in needed card (chat) */
+.signin-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0 14px; padding: 10px 12px 10px 14px; border: 1px solid color-mix(in srgb, #d97706 45%, var(--border)); background: color-mix(in srgb, #d97706 7%, var(--panel)); border-radius: 12px; }
+.signin-card.ok { border-color: color-mix(in srgb, #16a34a 45%, var(--border)); background: color-mix(in srgb, #16a34a 7%, var(--panel)); }
+.signin-main { display: flex; gap: 10px; align-items: flex-start; min-width: 0; flex: 1 1 280px; }
+.signin-icon { font-size: 18px; line-height: 1.2; }
+.signin-card.ok .signin-icon { filter: grayscale(1); }
+.signin-title { font-weight: 600; }
+.signin-sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.signin-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.signin-tools, .signin-row { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.signin-row { display: flex; margin-bottom: 8px; }
+.signin-btn.none, .signin-btn.unknown { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.signin-btn.expired { border-color: color-mix(in srgb, #d97706 55%, var(--border)); color: #b45309; background: color-mix(in srgb, #d97706 10%, var(--panel)); }
+.signin-btn.ok { border-color: color-mix(in srgb, var(--green, #16a34a) 45%, var(--border)); color: var(--green, #16a34a); }
+.signin-btn.checking, .signin-btn.waiting { color: var(--muted); }
+.signin-btn .spinner { width: 10px; height: 10px; vertical-align: -1px; }

@@ -451,8 +451,8 @@ function ticketRow(t) {
 // Ask AI opens the ticket screen and asks the standard question there (or reopens the ticket's chat).
 // Simply opening a ticket never sends anything to the assistant.
 let pendingAsk = null;
-// Runs the ticket-triage skill itself (not just its model), so its hand-off rules apply.
-const ASK_PROMPT = (id) => `/ticket-triage ${id}`;
+// Runs the triage-ticket skill itself (not just its model), so its hand-off rules apply.
+const ASK_PROMPT = (id) => `/triage-ticket ${id}`;
 function askAboutTicket(id, org, subject) {
   pendingAsk = { id: Number(id), org, subject };
   const target = `#/ticket/${id}`;
@@ -481,7 +481,7 @@ view.addEventListener('click', (e) => {
   if (a && !a.closest('#cfBody')) fetch(`/api/cloudflare/zones/${encodeURIComponent(a.dataset.cfopen)}/opened`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', keepalive: true });
 });
 let pendingPrompt = null;
-let pendingSkill = null; // whose model pendingPrompt uses (Ask AI = ticket-triage)
+let pendingSkill = null; // whose model pendingPrompt uses (Ask AI = triage-ticket)
 let chatTicketWatch = null; // set by an open ticket chat; called when tickets sync
 
 // ---------------- ticket preview (middle column of the ticket screen) ----------------
@@ -1343,6 +1343,7 @@ function clientPanelHtml(org, info, { compact = false } = {}) {
   const st = azStatus?.profiles?.find((x) => x.org === p?.org);
   const azure = p
     ? `<div class="row" style="margin-bottom:8px"><span data-status-org="${esc(p.org)}">${signInPills(st)}</span>${p.vpn?.required ? '<span class="pill vpn">🔒 VPN</span>' : ''}</div>
+       ${p.tenantId ? `<div class="signin-row" data-signin-row="${esc(p.org)}" data-env="${defaultEnv(p)}" data-vpn="${p.vpn?.required ? 'Dataweavers OpenVPN' : ''}">${signinButtons({ org: p.org, env: defaultEnv(p), vpn: p.vpn?.required ? 'Dataweavers OpenVPN' : '' }, st)}</div>` : ''}
        ${compact ? '' : `<div class="az-subs" style="margin-bottom:8px"><span><b>Prod</b> ${esc(p.subscriptionNames?.prod || p.subscriptions?.prod || '—')}</span><span><b>NonProd</b> ${esc(p.subscriptionNames?.nonprod || p.subscriptions?.nonprod || '—')}</span></div>`}
        ${azureActions(p)}`
     : `<div class="sub">No Azure details. <a href="#/settings/clients">Add them in Settings → Clients</a>.</div>`;
@@ -1542,6 +1543,7 @@ async function refreshAzureStatus(revalidate = false) {
     card.querySelector('[data-status]').innerHTML = signInPills(st);
   }
   for (const el of document.querySelectorAll('[data-status-org]')) el.innerHTML = signInPills(azStatus.profiles.find((x) => x.org === el.dataset.statusOrg));
+  paintSigninRows();
   if ($('#azChecked')) $('#azChecked').innerHTML = `${azStatus.error ? `<span class="pill red" title="${esc(azStatus.error)}">Azure CLI error</span> ` : ''}${azStatus.validating ? '<span class="spinner"></span> Testing each sign-in…' : `Sign-ins tested ${azStatus.validatedAt ? ago(azStatus.validatedAt) : '—'}`} · <a href="#" id="azRecheck">Check again</a>`;
   $('#azRecheck')?.addEventListener('click', (e) => { e.preventDefault(); refreshAzureStatus(true); });
 }
@@ -1914,10 +1916,140 @@ document.addEventListener('click', async (e) => {
   if (box.isContentEditable) { box.textContent = t; placeCaretEnd(box); } else { box.value = t; box.focus(); }
 });
 
+// ---------- Azure sign-in buttons (CLI + PowerShell): chat card and client sidebar ----------
+// Same buttons everywhere: [data-az-signin=org][data-tool=cli|ps]. A click opens the sign-in terminal,
+// then mon.ai checks every 10 s (3 min) and repaints every button / card for that client and tool.
+const SIGNIN_TOOLS = [['cli', 'Azure CLI'], ['ps', 'PowerShell']];
+
+/** State of one tool's sign-in from /api/azure/status: ok · checking · expired · none · unknown. */
+function signinState(st, tool) {
+  const s = st?.[tool];
+  if (!st) return 'unknown';
+  if (!s?.signedIn) return 'none';
+  return s.valid === true ? 'ok' : s.valid === false ? 'expired' : 'checking';
+}
+
+/** `t` = { org, env, vpn }; `force` = tool → state to show regardless of the cached status (e.g. the call that just failed). */
+function signinButtons(t, st, force = {}) {
+  return SIGNIN_TOOLS.map(([tool, name]) => {
+    const state = force[tool] || signinState(st, tool);
+    const user = st?.[tool]?.user;
+    const label = state === 'ok' ? `✓ ${name}` : state === 'checking' ? `… ${name}` : `Sign in · ${name}`;
+    const title = state === 'ok' ? `${name} is signed in${user ? ` as ${user}` : ''}. Click to sign in again.`
+      : state === 'expired' ? `${name} sign-in has expired: sign in again`
+        : state === 'checking' ? `Checking the saved ${name} sign-in… Click to sign in anyway.`
+          : `Sign in to ${t.org} with ${name === 'PowerShell' ? 'Az PowerShell' : name}`;
+    return `<button type="button" class="btn small signin-btn ${state}" data-az-signin="${esc(t.org)}" data-tool="${tool}" data-env="${esc(t.env || 'prod')}" data-vpn="${esc(t.vpn || '')}" title="${esc(title)}">${esc(label)}</button>`;
+  }).join('');
+}
+const defaultEnv = (p) => (p?.subscriptions?.prod || p?.prod?.id ? 'prod' : 'nonprod');
+
+/** Repaint the sidebar buttons from the latest status (called by refreshAzureStatus). */
+function paintSigninRows() {
+  for (const el of document.querySelectorAll('[data-signin-row]')) {
+    const st = azStatus?.profiles?.find((x) => x.org === el.dataset.signinRow);
+    if ([...signinPolls.keys()].some((k) => k.startsWith(`${el.dataset.signinRow}|`))) continue; // a sign-in is in progress: keep its spinner
+    el.innerHTML = signinButtons({ org: el.dataset.signinRow, env: el.dataset.env, vpn: el.dataset.vpn }, st);
+  }
+}
+
+function signinCards(list = []) {
+  return list.map((si) => `<div class="signin-card" data-signin="${esc(JSON.stringify(si))}">
+    <div class="signin-main">
+      <span class="signin-icon">🔑</span>
+      <div><div class="signin-title">Azure sign-in needed · ${esc(si.org)}</div>
+      <div class="signin-sub" data-signin-msg>mon.ai reads Azure through the Azure CLI, and it isn't signed in to ${esc(si.org)}'s tenant (or the sign-in expired).${si.vpn ? ` Needs ${esc(si.vpn)}.` : ''}</div></div>
+    </div>
+    <div class="signin-actions">
+      <span class="signin-tools" data-signin-tools>${signinButtons(si, azStatus?.profiles?.find((x) => x.org === si.org), { cli: 'none' })}</span>
+      <button type="button" class="btn small" data-signin-check title="Check the Azure CLI sign-in now">I've signed in</button>
+      <button type="button" class="btn small primary" data-signin-retry hidden>↻ Retry</button>
+    </div>
+  </div>`).join('');
+}
+
+/** A sign-in for org/tool works now: update every button and chat card for it. */
+function markSignedIn(org, tool) {
+  for (const b of document.querySelectorAll('[data-az-signin]')) {
+    if (b.dataset.azSignin !== org || b.dataset.tool !== tool) continue;
+    b.className = 'btn small signin-btn ok';
+    b.textContent = `✓ ${SIGNIN_TOOLS.find(([x]) => x === tool)[1]}`;
+  }
+  if (tool !== 'cli') return; // the assistant only needs the CLI
+  for (const card of document.querySelectorAll('.signin-card')) {
+    const si = JSON.parse(card.dataset.signin);
+    if (si.org !== org || card.classList.contains('ok')) continue;
+    card.classList.add('ok');
+    card.querySelector('.signin-title').textContent = `Azure signed in · ${org}`;
+    card.querySelector('[data-signin-msg]').textContent = `The Azure CLI is signed in to ${org}. Retry to let mon.ai continue.`;
+    card.querySelector('[data-signin-check]').hidden = true;
+    card.querySelector('[data-signin-retry]').hidden = false;
+  }
+}
+
+const signinPolls = new Map(); // "org|tool" → interval
+async function signinCheck(org, tool) {
+  const r = await api(`/api/azure/${encodeURIComponent(org)}/check?tool=${tool}`).catch((e) => ({ ok: false, error: e.message }));
+  if (r.ok) {
+    clearInterval(signinPolls.get(`${org}|${tool}`));
+    signinPolls.delete(`${org}|${tool}`);
+    markSignedIn(org, tool);
+    refreshAzureStatus();
+  }
+  return r;
+}
+
+document.addEventListener('click', async (e) => {
+  const go = e.target.closest('[data-az-signin]');
+  const check = e.target.closest('[data-signin-check]');
+  const retry = e.target.closest('[data-signin-retry]');
+  if (!go && !check && !retry) return;
+  if (retry || check) {
+    const card = e.target.closest('.signin-card');
+    const si = JSON.parse(card.dataset.signin);
+    if (retry) {
+      const box = document.querySelector('#input');
+      if (!box || !document.querySelector('#composer')) return;
+      edSet(box, `I've signed in to Azure for ${si.org}. Please retry what you were doing.`);
+      document.querySelector('#composer').requestSubmit();
+      return;
+    }
+    check.disabled = true;
+    try {
+      const r = await signinCheck(si.org, 'cli');
+      if (!r.ok) card.querySelector('[data-signin-msg]').textContent = `The Azure CLI still isn't signed in${r.error ? ` (${r.error})` : ''}. Finish the sign-in in the terminal / browser window, then check again.`;
+    } finally { check.disabled = false; }
+    return;
+  }
+  const org = go.dataset.azSignin, tool = go.dataset.tool, env = go.dataset.env || 'prod';
+  try {
+    if (go.dataset.vpn && !(await confirmDialog({ title: `${org} requires VPN`, intro: `Connect <b>${esc(go.dataset.vpn)}</b> first, then press OK.` }))) return;
+    const r = await api(`/api/azure/${encodeURIComponent(org)}/login`, { method: 'POST', body: { tool, env } });
+    toast(`${r.label}: opened in ${r.terminal}. Finish signing in there.`);
+    for (const b of document.querySelectorAll(`[data-az-signin="${CSS.escape(org)}"][data-tool="${tool}"]`)) {
+      b.className = 'btn small signin-btn waiting';
+      b.innerHTML = `<span class="spinner"></span> ${esc(SIGNIN_TOOLS.find(([x]) => x === tool)[1])}`;
+      b.title = 'Waiting for the sign-in to finish. Click to open it again.';
+    }
+    const key = `${org}|${tool}`;
+    clearInterval(signinPolls.get(key));
+    let n = 0;
+    signinPolls.set(key, setInterval(async () => {
+      if (++n > 18) { // gave up waiting: back to a plain Sign in button
+        clearInterval(signinPolls.get(key)); signinPolls.delete(key);
+        for (const b of document.querySelectorAll(`[data-az-signin="${CSS.escape(org)}"][data-tool="${tool}"]`)) { b.className = 'btn small signin-btn none'; b.textContent = `Sign in · ${SIGNIN_TOOLS.find(([x]) => x === tool)[1]}`; }
+        refreshAzureStatus(true); return;
+      }
+      await signinCheck(org, tool);
+    }, 10_000));
+  } catch (err) { toast(err.message); }
+});
+
 function assistantHtml(c, models, running = false) {
   const { body, next } = running ? { body: c.text, next: [] } : splitNext(c.text);
   return `${workLog(c, running)}
     <div class="body md">${body ? md(body) : running && !c.plan ? '<span class="typing"><span></span><span></span><span></span></span>' : ''}</div>
+    ${signinCards(c.signins)}
     ${planCard(c.plan)}
     ${next.length ? `<div class="next-steps"><div class="next-title">Next actions <span class="sub">pick one; it runs as the next message with that skill's model</span></div>${next.map((n, i) => `<button type="button" class="next-btn ${i === 0 ? 'primary' : ''}" data-next="${esc(n.cmd)}" title="Send ${esc(n.cmd)}">
         <span class="next-cmd">▶ ${esc(n.cmd.split(/\s+/)[0])}<span class="next-args">${esc(n.cmd.split(/\s+/).slice(1).join(' '))}</span></span>${n.why ? `<span class="next-why">${esc(n.why)}</span>` : ''}</button>`).join('')}</div>` : ''}
@@ -2069,7 +2201,7 @@ async function chatPage(id, opts = {}) {
         <button type="button" class="icon-btn attach-btn" id="attachBtn" title="Attach images or files (or paste / drop them where the cursor is)">📎</button>
         <input type="file" id="fileInput" multiple hidden>
         <div id="input" class="editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Message mon.ai…  Type / for skills. Paste or drop images and files where you want them. Ctrl+Enter to send."></div>
-        ${s.ticket_id ? `<button type="button" class="btn zd-refresh" id="zdRefresh" title="Bring in new comments from ticket #${s.ticket_id} since this chat last looked (runs /ticket-update)">↻ Zendesk</button>` : ''}
+        ${s.ticket_id ? `<button type="button" class="btn zd-refresh" id="zdRefresh" title="Bring in new comments from ticket #${s.ticket_id} since this chat last looked (runs /review-ticket-updates)">↻ Zendesk</button>` : ''}
         <button class="btn primary" id="sendBtn" title="Send (Ctrl+Enter)">Send</button>
       </div>
     </form>
@@ -2323,15 +2455,15 @@ async function chatPage(id, opts = {}) {
     }
     inner.insertAdjacentHTML('beforeend', `${userMsgHtml({ text, attachments: atts })}<div class="msg assistant"></div>`);
     const box = inner.lastElementChild;
-    const live = { segments: [''], tools: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
+    const live = { segments: [''], tools: [], signins: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
     const nearBottom = () => msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
     const paint = (running) => {
       const stick = nearBottom();
       const parts = live.segments.map((x) => x.trim()).filter(Boolean);
       const lastOpen = live.segments.at(-1).trim();
       const c = running
-        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, plan: live.plan, startedAt: live.startedAt }
-        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
+        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, signins: live.signins, plan: live.plan, startedAt: live.startedAt }
+        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, signins: live.signins, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
       // the step list stays as you left it (open or closed) while it runs, and folds up when done
       const was = box.querySelector('.worklog')?.open;
       box.innerHTML = assistantHtml(c, models, running) + live.errors.join('');
@@ -2363,6 +2495,7 @@ async function chatPage(id, opts = {}) {
           else if (type === 'segment') live.segments.push('');
           else if (type === 'tool') live.tools.push(data);
           else if (type === 'plan') live.plan = data;
+          else if (type === 'signin') live.signins.push(data);
           else if (type === 'tool_result') Object.assign(live.tools.find((x) => x.id === data.id) || {}, data);
           else if (type === 'model') { live.model = data.model; live.effort = data.effort; live.skill = data.skill; }
           else if (type === 'error') live.errors.push(`<div class="notice err" style="margin-top:8px">${esc(data.message)}${/auth|login/i.test(data.message) ? ' · <a href="#/settings/claude">Sign in to Claude</a>' : ''}</div>`);
@@ -2394,9 +2527,9 @@ async function chatPage(id, opts = {}) {
         }
         const NL = '\n';
         const lines = u.newComments.map((c) => `— ${c.author} · ${c.public ? (c.agent ? 'public reply' : 'customer reply') : 'internal note'} · ${fmt(c.created_at)}${c.attachments ? ` · ${c.attachments} attachment(s)` : ''}${NL}${c.body}`);
-        // runs the /ticket-update skill: short catch-up on its own (cheaper) model, no draft
+        // runs the /review-ticket-updates skill: short catch-up on its own (cheaper) model, no draft
         edSet(input, [
-          `/ticket-update ${u.ticket.id}`,
+          `/review-ticket-updates ${u.ticket.id}`,
           `Now ${u.ticket.status}, ${u.ticket.priority || 'no priority'}. ${u.newComments.length} new comment${u.newComments.length > 1 ? 's' : ''} since ${fmt(u.since)}:`,
           '',
           lines.join(NL + NL),
@@ -2570,7 +2703,7 @@ async function ticketPage(id, chatId) {
     if (!chatId) { history.replaceState(null, '', `#/ticket/${tid}/${sid}`); state.route = parseRoute(); loadSidebar(); }
     chatPage(sid, { host: chatHost });
   } else if (ask) {
-    startTicketChat(tid, ask.org, ask.subject, chatHost, ASK_PROMPT(tid), 'ticket-triage').catch((err) => toast(err.message));
+    startTicketChat(tid, ask.org, ask.subject, chatHost, ASK_PROMPT(tid), 'triage-ticket').catch((err) => toast(err.message));
   } else {
     chatHost.innerHTML = `<div class="tv-empty">
       <h2>Ask AI</h2>
@@ -2584,11 +2717,11 @@ async function ticketPage(id, chatId) {
       try { await startTicketChat(tid, d?.org, d?.ticket?.subject, chatHost, prompt, skill); } catch (err) { toast(err.message); chatHost.querySelectorAll('button, textarea').forEach((x) => { x.disabled = false; }); }
     };
     drawNoChatHead(tid);
-    $('#tvAsk').onclick = () => go(ASK_PROMPT(tid), 'ticket-triage');
+    $('#tvAsk').onclick = () => go(ASK_PROMPT(tid), 'triage-ticket');
     const own = $('#tvOwn');
     own.q.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); own.requestSubmit(); } };
     // "/" lists skills, like the chat box. A skill runs with the ticket number as its first argument
-    // (and on that skill's model), e.g. "/health-check cqu.edu.au" → "/health-check 22925 cqu.edu.au".
+    // (and on that skill's model), e.g. "/check-site-health cqu.edu.au" → "/check-site-health 22925 cqu.edu.au".
     previewP.then((d) => { if (own.isConnected) attachSkillPicker(own.q, d?.org || null); }).catch(() => {});
     own.onsubmit = (e) => {
       e.preventDefault();
@@ -2653,8 +2786,8 @@ async function skillEditor(id) {
   view.innerHTML = `<div class="page-head settings-head"><div><h1>${isNew ? 'New skill' : `/${esc(s.name)}`}</h1><div class="sub"><a href="#/skills">← All skills</a>${fromChat ? ` · drafted from the chat <a href="#/chat/${esc(fromChat.fromChat.id)}">${esc(fromChat.fromChat.title)}</a>, review it and Save` : ''} · saved to <span class="mono">ai-skills/skills/&lt;name&gt;/SKILL.md</span>, used from the next message</div></div>
     <div class="row">${isNew ? '' : '<button class="btn danger" id="skDelete">Delete</button><button class="btn" id="skTry">Run in chat</button>'}<button class="btn primary" id="skSave">Save</button></div></div>
     <form class="form wide" id="skForm"><div class="fields">
-      <label class="f">Name (what you type after /)<input name="name" value="${esc(s.name)}" placeholder="ticket-triage" pattern="[a-z0-9][a-z0-9-]*" required></label>
-      <label class="f">Model<select name="model" title="The model this skill runs with when you type /name (Ask AI uses /ticket-triage's)"><option value="">Loading…</option></select></label>
+      <label class="f">Name (what you type after /)<input name="name" value="${esc(s.name)}" placeholder="triage-ticket" pattern="[a-z0-9][a-z0-9-]*" required></label>
+      <label class="f">Model<select name="model" title="The model this skill runs with when you type /name (Ask AI uses /triage-ticket's)"><option value="">Loading…</option></select></label>
       <label class="f">Effort<select name="effort"><option value="">Default</option>${['low', 'medium', 'high', 'xhigh', 'max'].map((e) => `<option ${s.effort === e ? 'selected' : ''}>${e}</option>`).join('')}</select></label>
       <label class="f">Category<input name="category" value="${esc(s.category || '')}" list="skCats" placeholder="e.g. Investigation" maxlength="40" title="Groups skills on this page and in the / list. Pick one or type a new one."><datalist id="skCats">${[...new Set((skillsCache || []).map((x) => x.category).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}">`).join('')}</datalist></label>
       <label class="f">Clients<select name="org"><option value="">All clients</option>${orgChoices().map((o) => `<option ${o === s.org ? 'selected' : ''}>${esc(o)}</option>`).join('')}${s.org && !orgChoices().includes(s.org) ? `<option selected>${esc(s.org)}</option>` : ''}</select></label>
@@ -3005,7 +3138,7 @@ async function claudeSettings() {
     return lv.length ? lv.map((e) => `<option ${e === sel ? 'selected' : ''}>${e}</option>`).join('') : '<option value="">not supported by this model</option>';
   };
   $('#mdl').innerHTML = `<h2>AI model</h2>
-    <p class="sub">The default for every chat. A skill can use its own model and effort (set it in the Skills tab); it applies when you run that skill with /name, and Ask AI uses /ticket-triage's. A model picked in a chat's header overrides both for that chat. The list comes from your Claude subscription.</p>
+    <p class="sub">The default for every chat. A skill can use its own model and effort (set it in the Skills tab); it applies when you run that skill with /name, and Ask AI uses /triage-ticket's. A model picked in a chat's header overrides both for that chat. The list comes from your Claude subscription.</p>
     <form class="form" id="mdlForm"><div class="fields">
       <label class="f">Default model<select name="model">${modelOptions(models, cur.model || 'default')}</select></label>
       <label class="f">Effort (thinking depth; higher is slower and uses more of your limits)<select name="effort">${effortOptions(cur.model, cur.effort)}</select></label>
