@@ -442,23 +442,29 @@ function ticketRow(t) {
       <div class="reasons">${reasons.map(reasonPill).join('')}</div>
     </div>
     <div class="actions">
+      <button class="btn small upvote ${t.upvoted ? 'active' : ''}" data-upvote="${t.id}" data-on="${t.upvoted ? 0 : 1}" title="${t.upvoted ? 'Remove from your focus list' : 'Upvote to focus on this ticket'}">👀 ${t.upvoted ? 'Upvoted' : 'Upvote'}</button>
       ${t.needs_me || t.relation === 'unassigned' || t.chat_cooled ? `<button class="btn small" data-ignore="${t.id}" data-on="${t.ignored ? 0 : 1}" title="${t.ignored ? `Back to Needs you now${t.chat_cooled ? ' (also ends the chat cooldown)' : ''}` : t.relation === 'unassigned' && !t.needs_me ? 'Park it in Cooling down until something new happens on it' : 'Park it in Cooling down until you are mentioned again or you comment'}">${t.ignored ? 'Warm up' : 'Cool down'}</button>` : ''}
-      <button class="btn small" data-ask="${t.id}" data-org="${esc(t.org)}" data-subject="${esc(t.subject)}">Ask AI</button>
-      <a class="btn small" href="${esc(t.url)}" target="_blank" rel="noopener">Open</a>
     </div>
   </div>`;
 }
-// Ask AI opens the ticket screen and asks the standard question there (or reopens the ticket's chat).
-// Simply opening a ticket never sends anything to the assistant.
-let pendingAsk = null;
 // Runs the triage-ticket skill itself (not just its model), so its hand-off rules apply.
 const ASK_PROMPT = (id) => `/triage-ticket ${id}`;
-function askAboutTicket(id, org, subject) {
-  pendingAsk = { id: Number(id), org, subject };
-  const target = `#/ticket/${id}`;
-  if (location.hash === target) route(); else location.hash = target;
-}
 const onTicketAction = async (e) => {
+  const uv = e.target.closest('[data-upvote]');
+  if (uv) {
+    const upvoted = uv.dataset.on === '1';
+    uv.disabled = true;
+    try {
+      await api(`/api/tickets/${uv.dataset.upvote}/upvote`, { method: 'POST', body: { upvoted } });
+      toast(upvoted ? `#${uv.dataset.upvote} upvoted — score increased` : `#${uv.dataset.upvote} upvote removed`);
+      refreshDashboard().catch(() => {});
+      if (state.route.name === 'org') refreshOrgLive(state.route.id);
+    } catch (err) {
+      uv.disabled = false;
+      toast(err.message);
+    }
+    return;
+  }
   const ig = e.target.closest('[data-ignore]');
   if (ig) {
     try {
@@ -469,8 +475,6 @@ const onTicketAction = async (e) => {
     } catch (err) { toast(err.message); }
     return;
   }
-  const b = e.target.closest('[data-ask]');
-  if (b) { askAboutTicket(b.dataset.ask, b.dataset.org, b.dataset.subject); return; }
   if (e.target.closest('a, button, select, input, textarea')) return; // other links/buttons in a row do their own thing
   const p = e.target.closest('[data-preview]'); // clicking anywhere else on a ticket opens the preview
   if (p) location.hash = `#/ticket/${p.dataset.preview}`;
@@ -2247,6 +2251,7 @@ async function chatPage(id, opts = {}) {
         ${hasClient ? `<button class="btn small" id="sideToggle" title="Show or hide the ${esc(s.org)} panel">${esc(s.org)} panel</button>` : ''}
         <span class="menu-wrap"><button class="btn small" id="chatMenuBtn" aria-haspopup="menu" aria-expanded="false" title="More actions">⋯</button>
           <div class="menu" id="chatMenu" role="menu" hidden>
+            ${s.ticket_id ? `<button role="menuitem" data-act="upvote" title="${s.ticket_upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${s.ticket_upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>` : ''}
             <button role="menuitem" data-act="cooldown" title="${chatCooled(s) ? 'Bring this chat back to normal' : `Dim it in the sidebar and stop offering Zendesk refreshes${s.ticket_id ? ' until someone else updates the ticket' : ''}. Sending a message ends it.`}">${chatCooled(s) ? '☀ End cooldown' : '❄ Cooldown'}</button>
             <button role="menuitem" data-act="skill" title="Turn what this chat did into a reusable skill (you review it before saving)">＋ Create skill from chat</button>
             <button role="menuitem" data-act="archive" title="${s.archived_at ? 'Move back to active chats' : 'Hide from the sidebar but keep as a reference for the assistant'}">${s.archived_at ? '↩ Unarchive' : '🗄 Archive'}</button>
@@ -2313,7 +2318,11 @@ async function chatPage(id, opts = {}) {
   const menuBtn = $('#chatMenuBtn');
   wireMenu(menuBtn, $('#chatMenu'), async (act) => {
     try {
-      if (act === 'cooldown') {
+      if (act === 'upvote' && s.ticket_id) {
+        await api(`/api/tickets/${s.ticket_id}/upvote`, { method: 'POST', body: { upvoted: !s.ticket_upvoted } });
+        toast(s.ticket_upvoted ? `#${s.ticket_id} upvote removed` : `#${s.ticket_id} upvoted — score increased`);
+        chatPage(id, opts);
+      } else if (act === 'cooldown') {
         const on = !chatCooled(s);
         if (!on) forgetCooldown(id);
         await api(`/api/sessions/${id}/cooldown`, { method: 'POST', body: { on } });
@@ -2678,10 +2687,12 @@ async function drawNoChatHead(tid) {
   if (!slot?.isConnected || slot.querySelector('#chatModel')) return; // a chat started meanwhile
   const tk = tickets.find((x) => x.id === tid);
   const cooled = !!tk?.ignored;
+  const upvoted = !!tk?.upvoted;
   const noChat = 'title="Start a chat with Ask AI first"';
   slot.innerHTML = `<div class="row"><label class="model-pick" title="Model for the chat Ask AI starts">Model <select id="tvModel">${modelOptions(models, ticketModel, true)}</select></label>
     <span class="menu-wrap"><button class="btn small" id="chatMenuBtn" aria-haspopup="menu" aria-expanded="false" title="More actions">⋯</button>
       <div class="menu" id="chatMenu" role="menu" hidden>
+        <button role="menuitem" data-act="upvote" title="${upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>
         <button role="menuitem" data-act="cooldown" title="${cooled ? 'Back to Needs you now' : 'Park it in the Dashboard\'s Cooling down tab until someone else updates it'}">${cooled ? '☀ End cooldown' : '❄ Cooldown'}</button>
         <button role="menuitem" data-act="skill" disabled ${noChat}>＋ Create skill from chat</button>
         <button role="menuitem" data-act="archive" disabled ${noChat}>🗄 Archive</button>
@@ -2690,11 +2701,16 @@ async function drawNoChatHead(tid) {
       </div></span></div>`;
   $('#tvModel').onchange = (e) => { setTicketModelPicker(e.target.value); toast(e.target.value ? `Ask AI will use ${modelLabel(models, e.target.value)}` : 'Ask AI will use the default model'); };
   wireMenu($('#chatMenuBtn'), $('#chatMenu'), async (act) => {
-    if (act !== 'cooldown') return;
     try {
-      await api(`/api/tickets/${tid}/ignore`, { method: 'POST', body: { ignore: !cooled } });
-      toast(cooled ? `#${tid} back in Needs you` : `#${tid} cooling down: back when someone else updates it`);
-      drawNoChatHead(tid);
+      if (act === 'upvote') {
+        await api(`/api/tickets/${tid}/upvote`, { method: 'POST', body: { upvoted: !upvoted } });
+        toast(upvoted ? `#${tid} upvote removed` : `#${tid} upvoted — score increased`);
+        drawNoChatHead(tid);
+      } else if (act === 'cooldown') {
+        await api(`/api/tickets/${tid}/ignore`, { method: 'POST', body: { ignore: !cooled } });
+        toast(cooled ? `#${tid} back in Needs you` : `#${tid} cooling down: back when someone else updates it`);
+        drawNoChatHead(tid);
+      }
     } catch (err) { toast(err.message); }
   });
 }
@@ -2759,17 +2775,12 @@ async function ticketPage(id, chatId) {
 
   // ---- column 1: the ticket's chat, or an empty Ask AI box (nothing is asked until you click)
   const chatHost = $('#tvChat');
-  const ask = pendingAsk && pendingAsk.id === tid ? pendingAsk : null;
-  pendingAsk = null;
   const sessions = chatId ? [] : await api('/api/sessions').catch(() => []);
   if (!chatHost.isConnected) return;
   const sid = chatId || sessions.find((x) => Number(x.ticket_id) === tid)?.id;
   if (sid) {
-    if (ask) toast('Opened your existing chat for this ticket');
     if (!chatId) { history.replaceState(null, '', `#/ticket/${tid}/${sid}`); state.route = parseRoute(); loadSidebar(); }
     chatPage(sid, { host: chatHost });
-  } else if (ask) {
-    startTicketChat(tid, ask.org, ask.subject, chatHost, ASK_PROMPT(tid), 'triage-ticket').catch((err) => toast(err.message));
   } else {
     chatHost.innerHTML = `<div class="tv-empty">
       <h2>Ask AI</h2>
@@ -3369,7 +3380,7 @@ async function loadUsageSessions() {
   if (usage$.session && !usageSessions.some((x) => x.start === usage$.session)) usage$.session = '';
   return usageSessions;
 }
-/** The session picker and the "5-hour sessions" comparison list (Session range only). */
+/** The session picker and session comparison list (Session range only). */
 function drawSessionPicker() {
   const sel = $('#usSessionSel'), box = $('#usSessions');
   if (!sel || !box) return;
@@ -3377,8 +3388,8 @@ function drawSessionPicker() {
   const cur = list.find((x) => x.start === usage$.session) || list[0];
   sel.innerHTML = list.map((w) => `<option value="${esc(w.start)}" ${w === cur ? 'selected' : ''}>${esc(sessionLabel(w))} · ${fmtCost(w.cost)}</option>`).join('') || '<option>No sessions yet</option>';
   const max = Math.max(0.01, ...list.map((w) => w.cost));
-  box.innerHTML = list.length ? `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">5-hour sessions</h2><span class="sub">mon.ai chats only · earlier windows are rebuilt from the call times, so their edges are approximate</span></div>
-    <div class="us-sessions">${list.slice(0, 20).map((w) => `<button type="button" class="us-sess ${w === cur ? 'active' : ''} ${w.current ? 'now' : ''}" data-sess="${esc(w.start)}"><span class="us-sess-when">${esc(sessionLabel(w))}</span><span class="usage-bar"><i style="width:${Math.round((w.cost / max) * 100)}%"></i></span><b>${fmtCost(w.cost)}</b><span class="sub">${w.turns} msg${w.turns === 1 ? '' : 's'}</span></button>`).join('')}</div></div>` : '';
+  box.innerHTML = list.length ? `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Sessions</h2><span class="sub">mon.ai chats only · earlier windows are rebuilt from the call times, so their edges are approximate</span></div>
+    <div class="us-sessions">${list.slice(0, 100).map((w) => `<button type="button" class="us-sess ${w === cur ? 'active' : ''} ${w.current ? 'now' : ''}" data-sess="${esc(w.start)}"><span class="us-sess-when">${esc(sessionLabel(w))}</span><span class="usage-bar"><i style="width:${Math.round((w.cost / max) * 100)}%"></i></span><b>${fmtCost(w.cost)}</b><span class="sub">${w.turns} msg${w.turns === 1 ? '' : 's'}</span></button>`).join('')}</div></div>` : '';
 }
 const saveUsageRange = () => { try { localStorage.setItem('mon.usageRange', JSON.stringify(usage$)); } catch { /* ignore */ } };
 
@@ -3438,11 +3449,18 @@ async function usagePage() {
   $('#usApps').onclick = pickApp;
   $('#usTables').addEventListener('click', (e) => {
     pickApp(e);
-    const trigger = e.target.closest('.us-visual-trigger');
-    if (trigger) {
-      const item = trigger.closest('.us-visual-item');
-      const open = item.classList.toggle('open');
-      trigger.setAttribute('aria-expanded', String(open));
+    const slice = e.target.closest('[data-pie-slice]');
+    if (slice) {
+      const card = slice.closest('.us-dimension');
+      const target = card.querySelector(`[data-pie-info="${slice.dataset.pieSlice}"]`);
+      const wasPinned = card.dataset.piePinned === slice.dataset.pieSlice;
+      card.querySelectorAll('[data-pie-info]').forEach((el) => { el.hidden = true; });
+      if (wasPinned) {
+        delete card.dataset.piePinned;
+      } else {
+        card.dataset.piePinned = slice.dataset.pieSlice;
+        target.hidden = false;
+      }
       return;
     }
     const b = e.target.closest('[data-dimension-view]');
@@ -3453,6 +3471,41 @@ async function usagePage() {
     dimensionViews[b.dataset.dimensionView] = view;
     b.textContent = `Show ${view === 'table' ? 'visual' : 'table'}`;
     b.setAttribute('aria-label', `Show ${view === 'table' ? 'visual' : 'table'} view for ${b.dataset.dimensionView}`);
+  });
+  $('#usTables').addEventListener('pointerover', (e) => {
+    const slice = e.target.closest('[data-pie-slice]');
+    if (!slice) return;
+    const card = slice.closest('.us-dimension');
+    if (card.dataset.piePinned != null) return;
+    card.querySelectorAll('[data-pie-info]').forEach((el) => { el.hidden = true; });
+    card.querySelector(`[data-pie-info="${slice.dataset.pieSlice}"]`).hidden = false;
+  });
+  $('#usTables').addEventListener('pointerout', (e) => {
+    const slice = e.target.closest('[data-pie-slice]');
+    const detail = e.target.closest('.us-pie-detail');
+    if (!slice && !detail) return;
+    if (detail && e.relatedTarget && detail.contains(e.relatedTarget)) return;
+    const card = (slice || detail).closest('.us-dimension');
+    if (card.dataset.piePinned != null || e.relatedTarget?.closest?.('[data-pie-slice], .us-pie-detail')) return;
+    card.querySelectorAll('[data-pie-info]').forEach((el) => { el.hidden = true; });
+  });
+  $('#usTables').addEventListener('focusin', (e) => {
+    const slice = e.target.closest('[data-pie-slice]');
+    if (!slice) return;
+    const card = slice.closest('.us-dimension');
+    card.querySelectorAll('[data-pie-info]').forEach((el) => { el.hidden = true; });
+    card.querySelector(`[data-pie-info="${slice.dataset.pieSlice}"]`).hidden = false;
+  });
+  $('#usTables').addEventListener('focusout', (e) => {
+    if (e.relatedTarget?.closest?.('[data-pie-slice], .us-pie-detail')) return;
+    const card = e.target.closest('.us-dimension');
+    if (card?.dataset.piePinned == null) card.querySelectorAll('[data-pie-info]').forEach((el) => { el.hidden = true; });
+  });
+  $('#usTables').addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-pie-slice]')) {
+      e.preventDefault();
+      e.target.click();
+    }
   });
   $('#usSessions').onclick = (e) => { const b = e.target.closest('[data-sess]'); if (b) pickSession(b.dataset.sess); };
   $('#usRefresh').onclick = async (e) => {
@@ -3516,50 +3569,98 @@ async function drawUsageData() {
       ${rows.map((r) => `<tr><td class="us-name">${link ? link(r) : esc(r.label)}${r.models?.length ? `<span class="us-models">${r.models.filter((f) => f !== 'other').map((f) => `<i class="sw m-${f}" title="${famLabel(f)}"></i>`).join('')}</span>` : ''}</td>
         <td class="n">${r.turns}</td><td class="n">${fmtTok(r.output)}</td><td class="n">${fmtTok(r.tokens)}</td><td class="n">${fmtCost(r.costPerTurn)}</td>
         <td class="n us-cost">${fmtCost(r.cost)}<span class="us-share"><i style="width:${totalCost && r.cost ? Math.max(2, (r.cost / totalCost) * 100) : 0}%"></i></span></td></tr>`).join('')}</table>` : '<div class="sub">Nothing in this period.</div>';
-  const table = (title, rows, options = {}) => `<div class="card us-table"><h2>${title}${options.note ? ` <span class="sub">${options.note}</span>` : ''}</h2>${tableContent(rows, options)}</div>`;
+  const table = (title, rows, options = {}) => `<div class="card us-table"><h2>${title}${options.note ? ` <span class="sub">${options.note}</span>` : ''}</h2>${options.scroll ? `<div class="us-table-scroll">${tableContent(rows, options)}</div>` : tableContent(rows, options)}</div>`;
   const dimension = (key, title, rows, options = {}) => {
-    const maxCost = Math.max(0, ...rows.map((r) => r.cost || 0));
-    const visual = rows.length ? `<div class="us-visual-list">${rows.map((r, i) => {
-      const id = `us-${key}-${i}`;
-      const label = key === 'app'
-          ? `<span class="us-visual-name">${esc(r.label)}</span>`
-        : `<span class="us-visual-name"><i class="sw m-${famOf(r.label)}"></i>${esc(r.label.replace(/^claude-/, ''))}</span>`;
-      return `<div class="us-visual-item">
-        <button type="button" class="us-visual-trigger" aria-expanded="false" aria-controls="${id}">
-          <span>${label}</span><b>${fmtCost(r.cost)}</b>
-          <span class="us-visual-track"><i class="${key === 'model' ? `m-${famOf(r.label)}` : ''}" style="width:${maxCost && r.cost ? Math.max(2, (r.cost / maxCost) * 100) : 0}%"></i></span>
-        </button>
-        <div class="us-visual-details" id="${id}">
-          <span><b>${r.turns}</b> msg${r.turns === 1 ? '' : 's'}</span><span><b>${fmtTok(r.output)}</b> output</span>
-          <span><b>${fmtTok(r.tokens)}</b> tokens</span><span><b>${fmtCost(r.costPerTurn)}</b> per msg</span>
-            ${key === 'app' ? `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">Filter app</button>` : ''}
-          </div>
-        </div>`;
-    }).join('')}</div>` : '<div class="sub">Nothing in this period.</div>';
+    const pieColors = key === 'model'
+      ? rows.map((r) => `m-${famOf(r.label)}`)
+      : rows.map((r) => `app-${Math.max(0, USAGE_APPS.indexOf(r.key))}`);
+    const pieValues = {
+      'm-opus': 'var(--m-opus)', 'm-sonnet': 'var(--m-sonnet)', 'm-haiku': 'var(--m-haiku)',
+      'm-fable': 'var(--m-fable)', 'm-other': 'var(--m-other)',
+      'app-0': 'var(--accent)', 'app-1': 'var(--m-sonnet)', 'app-2': 'var(--m-haiku)',
+    };
+    const pieTotal = rows.reduce((n, r) => n + (r.cost || 0), 0);
+    let angle = -Math.PI / 2;
+    const cx = 300, cy = 180, radius = 145;
+    const slices = rows.map((r, i) => {
+      const fraction = pieTotal ? Math.max(0, r.cost || 0) / pieTotal : 0;
+      if (!fraction) {
+        angle += fraction * Math.PI * 2;
+        return { svg: '', detail: '' };
+      }
+      const end = angle + fraction * Math.PI * 2;
+      const mid = (angle + end) / 2;
+      const point = (a, rad) => [cx + Math.cos(a) * rad, cy + Math.sin(a) * rad];
+      const [x1, y1] = point(angle, radius), [x2, y2] = point(end, radius);
+      const large = end - angle > Math.PI ? 1 : 0;
+      const path = fraction >= 1 ? `M ${cx} ${cy - radius} A ${radius} ${radius} 0 1 1 ${cx - 0.01} ${cy - radius} Z`
+        : fraction > 0 ? `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${large} 1 ${x2} ${y2} Z` : '';
+      const [lx, ly] = point(mid, radius * (fraction >= 0.13 ? 0.58 : 1.16));
+      const small = fraction < 0.13;
+      const anchor = Math.cos(mid) < -0.15 ? 'end' : Math.cos(mid) > 0.15 ? 'start' : 'middle';
+      const [ex, ey] = small ? point(mid, radius + 12) : [lx, ly];
+      const tx = small ? ex + (anchor === 'end' ? -7 : anchor === 'start' ? 7 : 0) : lx;
+      const ty = small ? ey + (Math.sin(mid) < -0.55 ? -5 : Math.sin(mid) > 0.55 ? 12 : 4) : ly + 5;
+      const displayLabel = key === 'model' ? r.label.replace(/^claude-/, '') : r.label;
+      const detailsId = `us-${key}-${i}`;
+      const titleText = `${r.label}: ${fmtCost(r.cost)} · ${r.turns} messages · ${fmtTok(r.output)} output · ${fmtTok(r.tokens)} tokens · ${fmtCost(r.costPerTurn)} per message`;
+      angle = end;
+      return {
+        svg: `<g class="us-pie-slice ${small ? 'small' : ''}" tabindex="0" role="button" aria-label="${esc(titleText)}" aria-controls="${detailsId}" data-pie-slice="${i}">
+          <path d="${path}" fill="${pieValues[pieColors[i]] || 'var(--m-other)'}"></path>
+          ${small ? `<path class="us-pie-leader" d="M ${point(mid, radius - 1).join(' ')} L ${ex} ${ey} L ${tx} ${ey}"></path>` : ''}
+          <text x="${tx}" y="${ty}" text-anchor="${small ? anchor : 'middle'}">${fmtCost(r.cost)}</text>
+        </g>`,
+        detail: `<div class="us-pie-detail" id="${detailsId}" data-pie-info="${i}" hidden>
+        <b>${esc(displayLabel)}</b><span>${r.turns} msg${r.turns === 1 ? '' : 's'}</span>
+        <span>${fmtTok(r.output)} output</span><span>${fmtTok(r.tokens)} tokens</span>
+        <span>${fmtCost(r.costPerTurn)} per msg</span>
+        ${key === 'app' ? `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">Filter app</button>` : ''}
+      </div>`,
+      };
+    });
+    const legend = rows.map((r, i) => {
+      const displayLabel = key === 'model' ? r.label.replace(/^claude-/, '') : r.label;
+      return `<span class="us-pie-legend-item"><i class="sw" style="background:${pieValues[pieColors[i]] || 'var(--m-other)'}"></i>${esc(displayLabel)}</span>`;
+    }).join('');
+    const visual = rows.length ? `<div class="us-visual">
+      <svg class="us-pie" viewBox="${key === 'model' || key === 'app' ? '110 0 380 360' : '0 0 600 360'}" role="group" aria-label="${esc(title)} cost breakdown">${slices.map((s) => s.svg).join('')}</svg>
+      <div class="us-pie-details">${slices.map((s) => s.detail).join('')}</div>
+      <div class="us-pie-legend" aria-label="${esc(title)} legend">${legend}</div>
+    </div>` : '<div class="sub">Nothing in this period.</div>';
     return `<div class="card us-table us-dimension" data-dimension="${key}" data-view="${dimensionViews[key]}">
       <div class="us-dimension-head"><h2>${title}</h2><button type="button" class="btn small" data-dimension-view="${key}" aria-label="Show ${dimensionViews[key] === 'table' ? 'visual' : 'table'} view for ${key}">Show ${dimensionViews[key] === 'table' ? 'visual' : 'table'}</button></div>
-      <div class="us-visual">${visual}</div><div class="us-breakdown-table">${tableContent(rows, options)}</div>
+      ${visual}<div class="us-breakdown-table">${tableContent(rows, options)}</div>
     </div>`;
   };
   $('#usTables').innerHTML = [
-    `<div class="card us-table us-wide" id="usChats"></div>`,
-    usage$.app ? '' : dimension('app', 'By app', d.bySource, { first: 'App', link: (r) => `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">${esc(r.label)}</button>` }),
-    d.byProject.length ? table('Other apps by folder', d.byProject, { first: 'App · folder', note: 'Claude Desktop, VS Code and CLI sessions, by the folder they ran in' }) : '',
-    table('By skill', d.bySkill, { first: 'Skill', link: (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), note: 'the /skill a message ran (or the first one it used)' }),
-    dimension('model', 'By model', d.byModel.map((r) => ({ ...r, label: r.label.replace(/^claude-/, '') })), { first: 'Model' }),
-    usage$.app === 'mon.ai' ? table('By client', d.byClient, { first: 'Client', note: 'mon.ai chats', link: (r) => (r.key ? `<a href="#/org/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)) }) : '',
+    `<div class="us-overview-row">
+      <div class="card us-table us-wide" id="usChats"></div>
+      ${dimension('model', 'By model', d.byModel.map((r) => ({ ...r, label: r.label.replace(/^claude-/, '') })), { first: 'Model' })}
+    </div>`,
+    `<div class="us-breakdowns ${usage$.app === 'mon.ai' ? 'us-breakdowns-mon-ai' : ''}">
+      <div class="us-breakdown-column">
+        ${usage$.app ? '' : dimension('app', 'By app', d.bySource, { first: 'App', link: (r) => `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">${esc(r.label)}</button>` })}
+        ${d.byProject.length ? table('Other apps by folder', d.byProject, { first: 'App · folder', note: 'Claude Desktop, VS Code and CLI sessions, by the folder they ran in' }) : ''}
+      </div>
+      <div class="us-breakdown-column">
+        ${usage$.app === 'mon.ai'
+          ? `<div class="us-skill-client-row">
+              ${table('By skill', d.bySkill, { first: 'Skill', link: (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), note: 'the /skill a message ran (or the first one it used)', scroll: true })}
+              ${table('By client', d.byClient, { first: 'Client', note: 'mon.ai chats', link: (r) => (r.key ? `<a href="#/org/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), scroll: true })}
+            </div>`
+          : table('By skill', d.bySkill, { first: 'Skill', link: (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), note: 'the /skill a message ran (or the first one it used)' })}
+      </div>
+    </div>`,
   ].join('');
   drawChatUsage(d.byChat, totalCost);
 }
 
 // ---- By chat: pick how many, expand a chat to see its models, skills and costliest messages
-let usChatTop = 20;
-try { usChatTop = Number(localStorage.getItem('mon.usChatTop') ?? 20); } catch { /* ignore */ }
 const usExpanded = new Set();
 function drawChatUsage(chats, totalCost) {
   const el = $('#usChats');
   if (!el) return;
-  const shown = usChatTop ? chats.slice(0, usChatTop) : chats;
   const dots = (models) => (models?.length ? `<span class="us-models">${models.filter((f) => f !== 'other').map((f) => `<i class="sw m-${f}" title="${famLabel(f)}"></i>`).join('')}</span>` : '');
   const share = (c, of) => `<span class="us-share"><i style="width:${of && c ? Math.max(2, (c / of) * 100) : 0}%"></i></span>`;
   const mini = (title, rows, label) => `<div class="us-mini"><h3>${title}</h3><table>${rows.map((r) => `<tr><td class="us-name">${label(r)}</td><td class="n">${r.turns} msg${r.turns === 1 ? '' : 's'}</td><td class="n">${fmtTok(r.tokens)}</td><td class="n us-cost">${fmtCost(r.cost)}</td></tr>`).join('')}</table></div>`;
@@ -3568,18 +3669,14 @@ function drawChatUsage(chats, totalCost) {
       ${mini('Skills', c.bySkill, (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : `<span class="sub">${esc(r.label)}</span>`))}
       <div class="us-mini us-mini-wide"><h3>Costliest messages</h3><table>${c.messages.map((m) => `<tr><td class="us-name">${esc(m.text.slice(0, 120))}${m.skill && !m.text.startsWith(`/${m.skill}`) ? ` <span class="pill">/${esc(m.skill)}</span>` : ''}</td><td class="n">${m.calls} call${m.calls === 1 ? '' : 's'}</td><td class="n">${fmtTok(m.tokens)}</td><td class="n us-cost">${fmtCost(m.cost)}</td><td class="n sub">${ago(m.at)}</td></tr>`).join('')}</table></div>
     </div></td></tr>`;
-  el.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="margin:0">By chat / session <span class="sub">${chats.length} chat${chats.length === 1 ? '' : 's'} · click one to see its models, skills and messages</span></h2>
-      <div class="seg" id="usChatTop">${[[10, 'Top 10'], [20, '20'], [50, '50'], [100, '100'], [0, 'All']].map(([n, l]) => `<button data-top="${n}" class="${n === usChatTop ? 'active' : ''}">${l}</button>`).join('')}</div></div>
-    ${shown.length ? `<table>
+  el.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="margin:0">By chat / session <span class="sub">${chats.length} chat${chats.length === 1 ? '' : 's'} · click one to see its models, skills and messages</span></h2></div>
+    ${chats.length ? `<div class="us-table-scroll us-chat-scroll"><table>
       <tr><th>Chat</th><th class="n">Msgs</th><th class="n" title="Tokens the model wrote">Output</th><th class="n" title="All tokens: input, output, cache read and write">Tokens</th><th class="n">Per msg</th><th class="n">Cost</th></tr>
-      ${shown.map((c) => `<tr class="us-chat-row ${usExpanded.has(c.key) ? 'open' : ''}" data-chat="${esc(c.key)}">
-          <td class="us-name"><span class="us-caret">${usExpanded.has(c.key) ? '▾' : '▸'}</span>${c.chatId ? `<a href="#/chat/${esc(c.chatId)}">${esc(c.label)}</a>` : esc(c.label)}${c.org ? ` <span class="sub">· ${esc(c.org)}</span>` : ''}${c.source && c.source !== 'mon.ai' ? ` <span class="pill us-app" title="${esc(c.project || '')}">${esc(c.source)}</span>` : ''}${dots(c.models)}</td>
+      ${chats.map((c) => `<tr class="us-chat-row ${usExpanded.has(c.key) ? 'open' : ''}" data-chat="${esc(c.key)}">
+          <td class="us-name"><span class="us-caret">${usExpanded.has(c.key) ? '▾' : '▸'}</span>${c.chatId ? `<a href="#/chat/${esc(c.chatId)}">${esc(c.label)}</a>` : esc(c.label)}${c.org ? ` <span class="sub">· ${esc(c.org)}</span>` : ''}${c.source !== 'mon.ai' ? ` <span class="pill us-app" title="${esc(c.project || '')}">${esc(c.source || 'Other app')}</span>` : ''}${dots(c.models)}</td>
           <td class="n">${c.turns}</td><td class="n">${fmtTok(c.output)}</td><td class="n">${fmtTok(c.tokens)}</td><td class="n">${fmtCost(c.costPerTurn)}</td><td class="n us-cost">${fmtCost(c.cost)}${share(c.cost, totalCost)}</td></tr>
-        ${usExpanded.has(c.key) ? detail(c) : ''}`).join('')}</table>
-      ${usChatTop && chats.length > usChatTop ? `<div class="sub" style="margin-top:8px">${chats.length - usChatTop} more · pick a bigger number or All above</div>` : ''}` : '<div class="sub">Nothing in this period.</div>'}`;
+        ${usExpanded.has(c.key) ? detail(c) : ''}`).join('')}</table></div>` : '<div class="sub">Nothing in this period.</div>'}`;
   el.onclick = (e) => {
-    const top = e.target.closest('[data-top]');
-    if (top) { usChatTop = Number(top.dataset.top); try { localStorage.setItem('mon.usChatTop', String(usChatTop)); } catch { /* ignore */ } drawChatUsage(chats, totalCost); return; }
     if (e.target.closest('a')) return;
     const row = e.target.closest('.us-chat-row');
     if (row) { const k = row.dataset.chat; usExpanded.has(k) ? usExpanded.delete(k) : usExpanded.add(k); drawChatUsage(chats, totalCost); }

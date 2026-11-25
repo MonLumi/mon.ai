@@ -140,8 +140,12 @@ app.post('/api/tickets/:id/upvote', wrap((req) => {
   const upvoted = req.body.upvoted === true ? 1 : 0;
   const at = upvoted ? new Date().toISOString() : null;
   db.prepare('UPDATE tickets SET upvoted = ?, upvoted_at = ? WHERE id = ?').run(upvoted, at, id);
+  const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id);
+  if (!ticket) throw new Error(`Ticket #${id} not found`);
+  const { score, reasons } = zendesk.scoreTicket(ticket);
+  db.prepare('UPDATE tickets SET score = ?, reasons = ? WHERE id = ?').run(score, JSON.stringify(reasons), id);
   bus.emit('event', { type: 'tickets:updated', data: { id } });
-  return { id, upvoted: !!upvoted };
+  return { id, upvoted: !!upvoted, score };
 }));
 app.get('/api/zendesk/directory', wrap(() => zendesk.directory()));
 app.get('/api/zendesk/users', wrap((req) => zendesk.searchUsers(req.query.q)));
