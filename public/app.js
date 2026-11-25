@@ -3311,6 +3311,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !notifPa
 
 // ---------------- Usage: tokens by skill / ticket / client / chat / model ----------------
 const MODEL_FAMILIES = ['opus', 'sonnet', 'haiku', 'fable', 'other']; // fixed colour per model, never by rank
+const USAGE_APPS = ['mon.ai', 'Claude Desktop', 'Others'];
 const famOf = (m) => (String(m).match(/opus|sonnet|haiku|fable/i)?.[0] || 'other').toLowerCase();
 const famLabel = (f) => f[0].toUpperCase() + f.slice(1);
 const fmtTok = (n) => (n == null ? '–' : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
@@ -3318,11 +3319,12 @@ const fmtCost = (c) => (c == null ? '–' : '$' + (c >= 10 ? c.toFixed(1) : c.to
 // Usage range: today · this work week (from Monday) · last 7 / 30 days · custom dates · all.
 // Changing it only re-reads local data (transcripts + database): no model call, no tokens.
 const USAGE_RANGES = [['session', '5h session'], ['today', 'Today'], ['week', 'This week'], ['7', '7 days'], ['30', '30 days'], ['custom', 'Custom'], ['all', 'All']];
-const usage$ = { range: '7', from: '', to: '', session: '', app: '' }; // app: '' = all apps, or 'mon.ai', 'Claude Desktop', 'VS Code', … // session: start time of the picked 5-hour session ('' = current)
+const usage$ = { range: '7', from: '', to: '', session: '', app: '' }; // app: '' = all apps, or one of USAGE_APPS; session: start time of the picked 5-hour session ('' = current)
 let usageSessions = null; // [{ start, end, current, cost, turns, ... }] newest first
 try {
   Object.assign(usage$, JSON.parse(localStorage.getItem('mon.usageRange') || '{}'));
   if (!USAGE_RANGES.some(([k]) => k === usage$.range)) usage$.range = ({ 0: 'all', 30: '30' })[localStorage.getItem('mon.usageDays')] || '7'; // older setting
+  if (usage$.app && !USAGE_APPS.includes(usage$.app)) usage$.app = 'Others';
 } catch { /* ignore */ }
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const localMidnight = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -3395,7 +3397,7 @@ function drawPlanCard() {
 
 async function usagePage() {
   view.innerHTML = `<div class="page-head"><div><h1>Claude usage</h1>
-      <div class="sub">What mon.ai, Claude Desktop (Code tab), VS Code and the claude CLI use on this machine, read from Claude Code's transcripts. <b>Cost</b> is the API-equivalent price Claude Code reports: a fair measure of how much of your plan something uses (the plan itself isn't billed per token).</div></div>
+      <div class="sub">What mon.ai, Claude Desktop and other Claude Code apps use on this machine, read from Claude Code's transcripts. <b>Cost</b> is the API-equivalent price Claude Code reports: a fair measure of how much of your plan something uses (the plan itself isn't billed per token).</div></div>
     <div class="row us-range-row"><div class="seg" id="usRange" title="Changing the range re-reads local data only: it uses no tokens">${USAGE_RANGES.map(([k, l]) => `<button data-range="${k}" class="${k === usage$.range ? 'active' : ''}">${l}</button>`).join('')}</div>
       <span class="us-custom" id="usSession" ${usage$.range === 'session' ? '' : 'hidden'}><select id="usSessionSel" class="select" title="Which 5-hour session"><option>Loading…</option></select></span>
       <span class="us-custom" id="usCustom" ${usage$.range === 'custom' ? '' : 'hidden'}><input type="date" id="usFrom" value="${esc(usage$.from)}" max="${ymd(new Date())}" title="From (included)"><span class="sub">to</span><input type="date" id="usTo" value="${esc(usage$.to)}" max="${ymd(new Date())}" title="To (included; empty = today)"></span>
@@ -3449,10 +3451,7 @@ async function drawUsageData() {
   const { q, label } = usageQuery();
   const d = await api(`/api/usage?${q}${usage$.app ? `&source=${encodeURIComponent(usage$.app)}` : ''}`);
   if (seq !== drawUsageData.seq || state.route.name !== 'usage' || !$('#usKpis')) return;
-  // which app: all of them, or one (mon.ai, Claude Desktop, VS Code, the claude CLI)
-  const apps = d.sources.map((x) => x.source);
-  if (usage$.app && !apps.includes(usage$.app)) apps.push(usage$.app);
-  $('#usApps').innerHTML = `<span class="sub">App</span><div class="seg">${[['', 'All apps'], ...apps.map((a) => [a, a])].map(([k, l]) => `<button data-app="${esc(k)}" class="${k === usage$.app ? 'active' : ''}">${esc(l)}</button>`).join('')}</div><span class="sub">Claude Desktop (Code tab), VS Code and the claude CLI are read from their local transcripts. claude.ai chats keep none, so they aren't counted.${d.estimated ? ' Some costs are estimated (sessions without a cost record).' : ''}</span>`;
+  $('#usApps').innerHTML = `<span class="sub">App</span><div class="seg">${[['', 'All Apps'], ...USAGE_APPS.map((a) => [a, a])].map(([k, l]) => `<button data-app="${esc(k)}" class="${k === usage$.app ? 'active' : ''}">${esc(l)}</button>`).join('')}</div><span class="sub">Claude Desktop, Claude Code, VS Code and the CLI are read from their local transcripts. claude.ai chats keep none, so they aren't counted.${d.estimated ? ' Some costs are estimated (sessions without a cost record).' : ''}</span>`;
   const t = d.totals;
   $('#usKpis').innerHTML = [
     ['Cost', fmtCost(t.cost), `${label} · API-equivalent`],
@@ -3505,11 +3504,7 @@ async function drawUsageData() {
     d.byProject.length ? table('Other apps by folder', d.byProject, { first: 'App · folder', note: 'Claude Desktop, VS Code and CLI sessions, by the folder they ran in' }) : '',
     table('By skill', d.bySkill, { first: 'Skill', link: (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), note: 'the /skill a message ran (or the first one it used)' }),
     table('By model', d.byModel.map((r) => ({ ...r, label: r.label.replace(/^claude-/, '') })), { first: 'Model' }),
-    table('By client', d.byClient, { first: 'Client', note: 'mon.ai chats', link: (r) => (r.key ? `<a href="#/org/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)) }),
-    `<div class="card us-table us-wide"><h2>Most expensive messages</h2>${d.topTurns.length ? `<table>
-      <tr><th>Message</th><th class="tight">Skill</th><th class="n">Calls</th><th class="n">Tokens</th><th class="n">Cost</th><th class="n">When</th></tr>
-      ${d.topTurns.map((r) => `<tr><td class="us-name">${r.chatId ? `<a href="#/chat/${esc(r.chatId)}" title="${esc(r.chatTitle || '')}">${esc(r.text.slice(0, 110))}</a>` : esc(r.text.slice(0, 110))}${r.models?.length ? `<span class="us-models">${r.models.filter((f) => f !== 'other').map((f) => `<i class="sw m-${f}" title="${famLabel(f)}"></i>`).join('')}</span>` : ''}</td>
-        <td class="tight">${r.skill ? `/${esc(r.skill)}` : '<span class="sub">–</span>'}</td><td class="n">${r.calls}</td><td class="n">${fmtTok(r.tokens)}</td><td class="n us-cost">${fmtCost(r.cost)}</td><td class="n sub">${ago(r.at)}</td></tr>`).join('')}</table>` : '<div class="sub">Nothing in this period.</div>'}</div>`,
+    usage$.app === 'mon.ai' ? table('By client', d.byClient, { first: 'Client', note: 'mon.ai chats', link: (r) => (r.key ? `<a href="#/org/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)) }) : '',
   ].join('');
   drawChatUsage(d.byChat, totalCost);
 }
