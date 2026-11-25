@@ -97,12 +97,12 @@ app.get('/api/tickets', wrap((req) => {
   const where = [scope === 'open' ? "status NOT IN ('solved','closed')" : '1=1'];
   const args = [];
   if (org) { where.push('org = ?'); args.push(org); }
-  return db.prepare(`SELECT id, subject, status, priority, org, org_name, requester, assignee, assignee_id, created_at, updated_at, due_at, sla_breach_at, COALESCE(relation, 'assigned') AS relation, needs_me, needs_me_reason, ((ignored_mention_at IS NOT NULL AND ((needs_me = 1 AND ignored_mention_at = needs_me_at) OR (COALESCE(relation, 'assigned') = 'unassigned' AND ignored_mention_at = updated_at))) OR ${CHAT_COOLED} OR ${TICKET_COOLED}) AS ignored, (${CHAT_COOLED} OR ${TICKET_COOLED}) AS chat_cooled, score, reasons, url, my_update_at
-    FROM tickets WHERE ${where.join(' AND ')} ORDER BY score DESC, updated_at DESC LIMIT 500`).all(...args)
+  return db.prepare(`SELECT id, subject, status, priority, org, org_name, requester, assignee, assignee_id, created_at, updated_at, due_at, sla_breach_at, COALESCE(relation, 'assigned') AS relation, needs_me, needs_me_reason, COALESCE(upvoted, 0) AS upvoted, upvoted_at, ((ignored_mention_at IS NOT NULL AND ((needs_me = 1 AND ignored_mention_at = needs_me_at) OR (COALESCE(relation, 'assigned') = 'unassigned' AND ignored_mention_at = updated_at))) OR ${CHAT_COOLED} OR ${TICKET_COOLED}) AS ignored, (${CHAT_COOLED} OR ${TICKET_COOLED}) AS chat_cooled, score, reasons, url, my_update_at
+    FROM tickets WHERE ${where.join(' AND ')} ORDER BY COALESCE(upvoted, 0) DESC, score DESC, updated_at DESC LIMIT 500`).all(...args)
     .map((t) => ({ ...t, reasons: JSON.parse(t.reasons) }));
 }));
 // Tickets whose latest change was made by me in the last 24 hours (any status, any relation).
-app.get('/api/tickets/updated-by-me', wrap(() => db.prepare(`SELECT id, subject, status, priority, org, org_name, requester, assignee, assignee_id, created_at, updated_at, due_at, sla_breach_at, COALESCE(relation, 'assigned') AS relation, needs_me, needs_me_reason, 0 AS ignored, score, reasons, url, my_update_at
+app.get('/api/tickets/updated-by-me', wrap(() => db.prepare(`SELECT id, subject, status, priority, org, org_name, requester, assignee, assignee_id, created_at, updated_at, due_at, sla_breach_at, COALESCE(relation, 'assigned') AS relation, needs_me, needs_me_reason, COALESCE(upvoted, 0) AS upvoted, upvoted_at, 0 AS ignored, score, reasons, url, my_update_at
     FROM tickets WHERE my_update_at IS NOT NULL AND my_update_at > ? ORDER BY my_update_at DESC LIMIT 200`).all(new Date(Date.now() - 864e5).toISOString().replace(/\.\d+Z$/, 'Z'))
   .map((t) => ({ ...t, reasons: JSON.parse(t.reasons) }))));
 app.get('/api/tickets/:id', wrap((req) => zendesk.getTicketDetail(Number(req.params.id), { fresh: req.query.fresh === '1' })));
@@ -135,6 +135,14 @@ app.post('/api/tickets/:id/update', wrap((req) => {
   });
 }));
 app.post('/api/tickets/:id/ignore', wrap((req) => zendesk.setIgnored(Number(req.params.id), !!req.body.ignore)));
+app.post('/api/tickets/:id/upvote', wrap((req) => {
+  const id = Number(req.params.id);
+  const upvoted = req.body.upvoted === true ? 1 : 0;
+  const at = upvoted ? new Date().toISOString() : null;
+  db.prepare('UPDATE tickets SET upvoted = ?, upvoted_at = ? WHERE id = ?').run(upvoted, at, id);
+  bus.emit('event', { type: 'tickets:updated', data: { id } });
+  return { id, upvoted: !!upvoted };
+}));
 app.get('/api/zendesk/directory', wrap(() => zendesk.directory()));
 app.get('/api/zendesk/users', wrap((req) => zendesk.searchUsers(req.query.q)));
 app.get('/api/zendesk/macros', wrap((req) => zendesk.macros({ fresh: req.query.fresh === '1' })));
