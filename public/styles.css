@@ -1139,3 +1139,11 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .assignees th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .assignees th.sortable:hover, .assignees th.sorted { color: var(--text); }
 .assignees .sort-ind { display: inline-block; width: 1em; margin-left: 3px; font-size: 9px; text-align: center; }
+
+/* Dashboard tables in the narrow right column: no forced 260px name column (that's for the repo tables),
+   names wrap, numbers stay on one line, so there's no horizontal scrollbar. */
+.main .dash-table td:first-child { min-width: 0; overflow-wrap: anywhere; }
+.dash-table th, .dash-table td { padding: 8px 6px; }
+.dash-table td:not(:first-child) { white-space: nowrap; }
+.assignees.dash-table th.sortable { white-space: normal; }
+.assignees .sort-ind { width: auto; }

@@ -1393,7 +1393,7 @@ async function refreshDashboard() {
   for (const t of tickets.filter(isMine)) row(t.org).open.push(t);
   for (const t of allTickets) if (isMine(t) && ['solved', 'closed'].includes(t.status) && new Date(t.updated_at).getTime() >= weekStart.getTime()) row(t.org).resolved++;
   const top = (r) => (r.open.length ? Math.max(...r.open.map((t) => t.score)) : -Infinity);
-  $('#byOrg').innerHTML = Object.keys(byOrg).length ? `<table><tr><th>Org</th><th>Open</th><th>Hot</th><th title="Your tickets solved or closed since Monday">Resolved</th><th>Top score</th></tr>${Object.entries(byOrg)
+  $('#byOrg').innerHTML = Object.keys(byOrg).length ? `<table class="dash-table"><tr><th>Org</th><th>Open</th><th>Hot</th><th title="Your tickets solved or closed since Monday">Resolved</th><th>Top score</th></tr>${Object.entries(byOrg)
     .sort((a, b) => top(b[1]) - top(a[1]) || b[1].resolved - a[1].resolved)
     .map(([o, r]) => `<tr><td><a href="#/org/${encodeURIComponent(o)}">${esc(o)}</a></td><td>${r.open.length}</td><td>${r.open.filter((t) => t.score >= 40).length}</td><td>${r.resolved}</td><td>${r.open.length ? Math.round(top(r)) : '–'}</td></tr>`).join('')}</table>
     <div class="sub" style="margin-top:6px">Resolved: your tickets solved or closed since Monday.</div>`
@@ -1415,7 +1415,7 @@ function drawByAssignee(team) {
   const list = [...team.agents].sort((a, b) => sort.dir * cmp(a, b, sort.key) || -cmp(a, b, 'seconds') || cmp(a, b, 'name'));
   const maxSec = Math.max(1, ...list.map((a) => a.seconds));
   const th = (key, label, tip, num) => `<th class="sortable${num ? ' num' : ''}${sort.key === key ? ' sorted' : ''}" data-sort="${key}" title="${tip}">${label}<span class="sort-ind">${sort.key === key ? (sort.dir < 0 ? '▼' : '▲') : ''}</span></th>`;
-  el.innerHTML = `<div class="assignee-scroll"><table class="assignees"><tr>${th('name', 'Assignee', 'Sort by name', false)}${th('seconds', 'Time logged', 'Time Tracking: time logged since Monday', true)}${th('open', 'In queue', 'Open tickets in their queue (new, open, pending, on hold)', true)}${th('resolved', 'Resolved', 'Tickets assigned to them, solved since Monday', true)}</tr>${list.map((a) => `<tr class="${a.me ? 'me' : ''}">
+  el.innerHTML = `<div class="assignee-scroll"><table class="assignees dash-table"><tr>${th('name', 'Assignee', 'Sort by name', false)}${th('seconds', 'Time logged', 'Time Tracking: time logged since Monday', true)}${th('open', 'In queue', 'Open tickets in their queue (new, open, pending, on hold)', true)}${th('resolved', 'Resolved', 'Tickets assigned to them, solved since Monday', true)}</tr>${list.map((a) => `<tr class="${a.me ? 'me' : ''}">
       <td>${esc(a.name)}${a.me ? ' <span class="sub">(you)</span>' : ''}</td>
       <td class="num">${a.seconds ? fmtDuration(a.seconds) : '–'}<div class="logbar" style="width:${(a.seconds / maxSec) * 100}%;${a.seconds ? '' : 'visibility:hidden'}"></div></td>
       <td class="num">${a.open ?? '–'}</td><td class="num">${a.resolved ?? '–'}</td></tr>`).join('')}</table></div>
@@ -1430,7 +1430,28 @@ function drawByAssignee(team) {
     drawByAssignee(team);
     const s = el.querySelector('.assignee-scroll'); if (s) s.scrollTop = top;
   };
+  fitAssignees();
 }
+/**
+ * Let the By assignee list use the screen height that's left below it, so tall monitors show more
+ * people without the dashboard itself scrolling. If the card starts below the fold, it keeps about 8 rows.
+ */
+function fitAssignees() {
+  const s = $('.assignee-scroll');
+  if (!s) return;
+  const main = view, card = s.closest('.card');
+  s.style.maxHeight = 'none';
+  const top = s.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+  const below = card.getBoundingClientRect().bottom - s.getBoundingClientRect().bottom; // footnote + card padding
+  const pad = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+  // Grow down to the bottom of the screen, or of the Focus queue if that's longer (the page scrolls for it anyway).
+  const queue = $('#queue')?.closest('.card');
+  const queueBottom = queue ? queue.getBoundingClientRect().bottom - main.getBoundingClientRect().top + main.scrollTop : 0;
+  const room = Math.max(main.clientHeight - pad, queueBottom) - top - below;
+  // Enough room (3+ rows): fit exactly, no page scroll. Card already below the fold: keep ~8 rows.
+  s.style.maxHeight = `${Math.floor(room >= 150 ? room : 360)}px`;
+}
+window.addEventListener('resize', () => { if (state.route?.name === 'dashboard') fitAssignees(); });
 
 // ---------- static data cache (client settings, Cloudflare zones, repos) ----------
 // These rarely change, so they're fetched once and reused on every page; they're dropped
