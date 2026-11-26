@@ -307,6 +307,218 @@ const rteClean = (html) => DOMPurify.sanitize(html, { ALLOWED_TAGS: RTE_TAGS, AL
 /** Text with a Markdown table in it (a | --- | --- | separator line), e.g. a draft copied as plain text. */
 const MD_TABLE = /^ *\|?(?: *:?-{3,}:? *\|)+ *(?::?-{3,}:?)? *\|? *$/m;
 const TABLE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10M15 9.5v10"/></svg>';
+
+// ---- tables in the editor. Formatting is kept as inline styles and colspan / rowspan, which is what
+// survives into Zendesk's html_body (no classes). Merged cells are handled through a grid of [row][col] → cell.
+const TBL_HEAD_BG = '#f3f4f6';
+const TBL_SHADES = [['#f3f4f6', 'Grey'], ['#dbeafe', 'Blue'], ['#dcfce7', 'Green'], ['#fef9c3', 'Yellow'], ['#ffedd5', 'Orange'], ['#fee2e2', 'Red'], ['#ede9fe', 'Purple']];
+// Inline styles a table may keep (on paste, in drafts, in posted comments); everything else is dropped.
+const TBL_STYLE = { TD: ['text-align', 'vertical-align', 'background-color', 'width', 'height'], TH: ['text-align', 'vertical-align', 'background-color', 'width', 'height'], TABLE: ['width'], SPAN: ['color'] };
+function keepStyles(n) {
+  const props = TBL_STYLE[n.nodeName] || [];
+  const kept = props.map((k) => [k, n.style.getPropertyValue(k)]).filter(([, v]) => v);
+  n.removeAttribute('style');
+  for (const [k, v] of kept) n.style.setProperty(k, v);
+  if (!n.getAttribute('style')) n.removeAttribute('style');
+}
+function tblStyle(el, prop, v) {
+  if (v) el.style.setProperty(prop, v); else el.style.removeProperty(prop);
+  if (!el.getAttribute('style')?.trim()) el.removeAttribute('style');
+}
+const sameColor = (a, b) => { const x = document.createElement('i'); x.style.color = a; const y = x.style.color; x.style.color = b; return !!y && y === x.style.color; };
+/** grid[r][c] = the cell covering that slot (a merged cell appears in every slot it covers). */
+function tblGrid(table) {
+  const g = [], n = table.rows.length;
+  [...table.rows].forEach((tr, r) => {
+    g[r] = g[r] || [];
+    let c = 0;
+    for (const cell of tr.cells) {
+      while (g[r][c]) c++;
+      for (let i = 0; i < Math.max(1, cell.rowSpan) && r + i < n; i++) for (let j = 0; j < Math.max(1, cell.colSpan); j++) (g[r + i] = g[r + i] || [])[c + j] = cell;
+      c += Math.max(1, cell.colSpan);
+    }
+  });
+  return g;
+}
+function tblPos(g, cell) {
+  for (let r = 0; r < g.length; r++) {
+    const c = g[r].indexOf(cell);
+    if (c !== -1) return { r, c, r1: r + Math.max(1, cell.rowSpan) - 1, c1: c + Math.max(1, cell.colSpan) - 1 };
+  }
+  return null;
+}
+const tblWidth = (g) => Math.max(0, ...g.map((row) => row.length));
+function tblNewCell(tag) {
+  const c = document.createElement(tag);
+  c.append(document.createElement('br'));
+  if (tag === 'th') c.style.backgroundColor = TBL_HEAD_BG;
+  return c;
+}
+/** Put `cell` in row r at grid column x: before the first cell of that row that starts at or after x. */
+function tblPlace(table, g, r, x, cell) {
+  const tr = table.rows[r];
+  tr.insertBefore(cell, [...tr.cells].find((c) => tblPos(g, c)?.c >= x) || null);
+}
+function tblRename(cell, tag) {
+  if (cell.tagName.toLowerCase() === tag) return cell;
+  const n = document.createElement(tag);
+  for (const a of cell.attributes) n.setAttribute(a.name, a.value);
+  n.append(...cell.childNodes);
+  cell.replaceWith(n);
+  return n;
+}
+function tblShadeHead(cell, on) {
+  if (on && !cell.style.backgroundColor) cell.style.backgroundColor = TBL_HEAD_BG;
+  else if (!on && sameColor(cell.style.backgroundColor, TBL_HEAD_BG)) tblStyle(cell, 'background-color', '');
+}
+const isHeadRow = (table) => !!table.rows[0]?.cells.length && [...table.rows[0].cells].every((c) => c.tagName === 'TH');
+function isHeadCol(table) {
+  const g = tblGrid(table), rows = isHeadRow(table) ? g.slice(1) : g;
+  return rows.length > 0 && rows.every((row) => row[0]?.tagName === 'TH');
+}
+/** Drop empty rows and sections, and colspan / rowspan of 1. False when nothing is left. */
+function tblTidy(table) {
+  for (let i = table.rows.length - 1; i >= 0; i--) {
+    if (table.rows[i].cells.length) continue;
+    new Set(tblGrid(table)[i] || []).forEach((c) => { if (c && c.rowSpan > 1) c.rowSpan -= 1; });
+    table.rows[i].remove();
+  }
+  for (const s of [table.tHead, ...table.tBodies]) if (s && !s.rows.length) s.remove();
+  for (const c of table.querySelectorAll('th, td')) {
+    if (c.colSpan <= 1) c.removeAttribute('colspan');
+    if (c.rowSpan <= 1) c.removeAttribute('rowspan');
+  }
+  return table.rows.length > 0;
+}
+function tblInsertRow(table, y) {
+  const g = tblGrid(table), tr = document.createElement('tr'), done = new Set();
+  const head = y === 0 && isHeadRow(table), headCol = isHeadCol(table);
+  for (let x = 0; x < tblWidth(g); x++) {
+    const above = g[y - 1]?.[x], below = g[y]?.[x];
+    if (above && above === below) { if (!done.has(above)) { above.rowSpan += 1; done.add(above); } continue; } // a merged cell spans the new row
+    tr.append(tblNewCell(head || (headCol && x === 0) ? 'th' : 'td'));
+  }
+  const ref = table.rows[y], last = table.rows[y - 1];
+  if (ref) ref.before(tr);
+  else if (last?.parentElement.tagName === 'THEAD') (table.tBodies[0] || table.createTBody()).append(tr);
+  else if (last) last.after(tr);
+  else (table.tBodies[0] || table.createTBody()).append(tr);
+}
+function tblInsertCol(table, x) {
+  const g = tblGrid(table), done = new Set();
+  [...table.rows].forEach((tr, r) => {
+    const left = g[r][x - 1], right = g[r][x];
+    if (left && left === right) { if (!done.has(left)) { left.colSpan += 1; done.add(left); } return; }
+    tblPlace(table, g, r, x, tblNewCell((right || left)?.tagName === 'TH' ? 'th' : 'td'));
+  });
+}
+function tblDeleteRow(table, y) {
+  const g = tblGrid(table), done = new Set(), tr = table.rows[y];
+  for (const c of g[y] || []) {
+    if (!c || done.has(c)) continue;
+    done.add(c);
+    if (c.rowSpan <= 1) continue; // goes with the row
+    const p = tblPos(g, c);
+    c.rowSpan -= 1;
+    if (p.r === y) { // a merged cell that starts here moves down to the next row
+      const next = table.rows[y + 1];
+      next.insertBefore(c, [...next.cells].find((n) => tblPos(g, n).c > p.c) || null);
+    }
+  }
+  tr.remove();
+  return tblTidy(table);
+}
+function tblDeleteCol(table, x) {
+  const g = tblGrid(table), done = new Set();
+  for (const row of g) {
+    const c = row[x];
+    if (!c || done.has(c)) continue;
+    done.add(c);
+    if (c.colSpan > 1) c.colSpan -= 1; else c.remove();
+  }
+  return tblTidy(table);
+}
+/** Merge the cells into one (the smallest rectangle that holds them all); their contents are kept, one per line. */
+function tblMerge(table, cells) {
+  const g = tblGrid(table);
+  let ps = cells.map((c) => tblPos(g, c)).filter(Boolean);
+  let r0 = Math.min(...ps.map((p) => p.r)), r1 = Math.max(...ps.map((p) => p.r1)), c0 = Math.min(...ps.map((p) => p.c)), c1 = Math.max(...ps.map((p) => p.c1));
+  for (let grew = true; grew;) { // grow the box until no merged cell sticks out of it
+    grew = false;
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const p = g[r]?.[c] && tblPos(g, g[r][c]);
+      if (!p) return null; // ragged table: nothing to merge with
+      if (p.r < r0 || p.r1 > r1 || p.c < c0 || p.c1 > c1) { r0 = Math.min(r0, p.r); r1 = Math.max(r1, p.r1); c0 = Math.min(c0, p.c); c1 = Math.max(c1, p.c1); grew = true; }
+    }
+  }
+  const all = [];
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (!all.includes(g[r][c])) all.push(g[r][c]);
+  if (all.length < 2) return all[0] || null;
+  const keep = all[0];
+  const filled = all.filter((c) => c.textContent.trim() || c.querySelector('img')).map((c) => [...c.childNodes]);
+  keep.replaceChildren();
+  filled.forEach((nodes, i) => { if (i) keep.append(document.createElement('br')); keep.append(...nodes); });
+  if (!filled.length) keep.append(document.createElement('br'));
+  for (const c of all.slice(1)) c.remove();
+  keep.colSpan = c1 - c0 + 1;
+  keep.rowSpan = r1 - r0 + 1;
+  tblTidy(table);
+  return keep;
+}
+/** Split a merged cell back into single cells (the new ones take its alignment and shading). */
+function tblSplit(table, cell) {
+  const g = tblGrid(table), p = tblPos(g, cell);
+  if (!p || (p.r === p.r1 && p.c === p.c1)) return;
+  const tag = cell.tagName.toLowerCase(), style = cell.getAttribute('style');
+  for (let r = p.r; r <= p.r1; r++) {
+    const frag = document.createDocumentFragment();
+    for (let c = p.c; c <= p.c1; c++) {
+      if (r === p.r && c === p.c) continue;
+      const n = tblNewCell(tag);
+      if (style) n.setAttribute('style', style);
+      tblStyle(n, 'width', '');
+      frag.append(n);
+    }
+    if (r === p.r) cell.after(frag);
+    else { const tr = table.rows[r]; tr.insertBefore(frag, [...tr.cells].find((n) => tblPos(g, n)?.c > p.c) || null); }
+  }
+  cell.removeAttribute('colspan');
+  cell.removeAttribute('rowspan');
+}
+function tblHeadRow(table, on) {
+  const first = table.rows[0];
+  if (!first) return;
+  const headCol = isHeadCol(table);
+  if (on) {
+    if (first.parentElement.tagName !== 'THEAD') (table.tHead || table.createTHead()).append(first);
+    [...first.cells].forEach((c) => tblShadeHead(tblRename(c, 'th'), true));
+  } else {
+    if (first.parentElement.tagName === 'THEAD') (table.tBodies[0] || table.createTBody()).prepend(first);
+    [...first.cells].forEach((c, i) => { if (!(headCol && i === 0)) tblShadeHead(tblRename(c, 'td'), false); });
+  }
+  tblTidy(table);
+}
+function tblHeadCol(table, on) {
+  const g = tblGrid(table), headRow = isHeadRow(table), done = new Set();
+  g.forEach((row, r) => {
+    const c = row[0];
+    if (!c || done.has(c)) return;
+    done.add(c);
+    if (r === 0 && headRow) return;
+    tblShadeHead(tblRename(c, on ? 'th' : 'td'), on);
+  });
+}
+/** Markdown tables (drafts): alignment as a style Zendesk keeps, header cells shaded, no stray whitespace. */
+function tblDefaults(html) {
+  const t = document.createElement('template');
+  t.innerHTML = String(html).replace(/>\s+<(\/?)(table|thead|tbody|tr|th|td)\b/g, '><$1$2');
+  for (const c of t.content.querySelectorAll('th, td')) {
+    const a = c.getAttribute('align');
+    if (a) { c.style.textAlign = a; c.removeAttribute('align'); }
+    if (c.tagName === 'TH' && !c.style.backgroundColor) c.style.backgroundColor = TBL_HEAD_BG;
+  }
+  return t.innerHTML;
+}
 const RTE_COLORS = ['#1f2937', '#6b7280', '#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', '#2563eb', '#7c3aed', '#db2777'];
 const ICON = (d) => `<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
 function rteToolbar() {
@@ -351,6 +563,7 @@ const dropEmptyParas = (html) => String(html).replace(/<p\b[^>]*>(?:\s|&nbsp;| 
 function rteHtml(ed, { preview = false } = {}) {
   const c = ed.cloneNode(true);
   c.querySelectorAll('[contenteditable]').forEach((n) => n.removeAttribute('contenteditable'));
+  c.querySelectorAll('.rte-cell-sel').forEach((n) => { n.classList.remove('rte-cell-sel'); if (!n.className) n.removeAttribute('class'); });
   c.querySelectorAll('img').forEach((img) => {
     if (!img.dataset.zdUrl || !img.dataset.zdToken) { img.remove(); return; }
     const n = document.createElement('img');
@@ -449,71 +662,159 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
     const r = document.createRange(); r.selectNodeContents(cell); if (!select) r.collapse(true);
     const s = getSelection(); s.removeAllRanges(); s.addRange(r); keep();
   };
-  const newCell = (tag) => { const c = document.createElement(tag); c.append(document.createElement('br')); return c; };
+  /** The cells you selected: the rectangle between the cell you started dragging in and the one you ended in (like a spreadsheet), or the caret's cell. */
+  const selCells = () => {
+    const cell = cellAt();
+    if (!cell) return [];
+    const table = cell.closest('table'), s = getSelection();
+    if (!s.rangeCount || s.isCollapsed) return [cell];
+    const r = s.getRangeAt(0);
+    const cellOf = (n) => { const c = (n.nodeType === 1 ? n : n.parentElement)?.closest('td, th'); return c?.closest('table') === table ? c : null; };
+    const a = cellOf(r.startContainer) || cell, b = cellOf(r.endContainer) || cell;
+    if (a === b) return [a];
+    const g = tblGrid(table), pa = tblPos(g, a), pb = tblPos(g, b);
+    const out = [];
+    for (let y = Math.min(pa.r, pb.r); y <= Math.max(pa.r1, pb.r1); y++) for (let x = Math.min(pa.c, pb.c); x <= Math.max(pa.c1, pb.c1); x++) {
+      const c = g[y]?.[x];
+      if (c && !out.includes(c)) out.push(c);
+    }
+    return out;
+  };
   const insertTable = (rows, cols) => {
     restore();
-    const tr = (tag) => `<tr>${`<${tag}><br></${tag}>`.repeat(cols)}</tr>`;
+    const tr = (tag) => `<tr>${`<${tag}${tag === 'th' ? ` style="background-color:${TBL_HEAD_BG}"` : ''}><br></${tag}>`.repeat(cols)}</tr>`;
     const head = rows > 1 ? `<thead>${tr('th')}</thead>` : '';
     document.execCommand('insertHTML', false, `<table data-new="1">${head}<tbody>${tr('td').repeat(rows > 1 ? rows - 1 : 1)}</tbody></table><p><br></p>`);
     const t = ed.querySelector('table[data-new]');
     if (t) { t.removeAttribute('data-new'); caretIn(t.rows[0].cells[0]); }
     onChange(); refresh();
   };
-  const tblEdit = (act, { first = false } = {}) => {
+  const tblEdit = (act, val = '', { first = false } = {}) => {
     restore();
     const cell = cellAt();
     if (!cell) return;
-    const tr = cell.parentElement, table = cell.closest('table'), idx = cell.cellIndex;
-    const width = Math.max(...[...table.rows].map((r) => [...r.cells].reduce((n, c) => n + (c.colSpan || 1), 0)));
-    let next = null;
-    const dropTable = () => { const p = document.createElement('p'); p.append(document.createElement('br')); table.replaceWith(p); next = p; };
-    if (act === 'rowAbove' || act === 'rowBelow') {
-      const head = tr.parentElement.tagName === 'THEAD';
-      const row = document.createElement('tr');
-      for (let i = 0; i < width; i++) row.append(newCell(head && act === 'rowAbove' ? 'th' : 'td'));
-      if (act === 'rowAbove') tr.before(row);
-      else if (head) (table.tBodies[0] || table.createTBody()).prepend(row);
-      else tr.after(row);
-      next = row.cells[first ? 0 : Math.min(idx, row.cells.length - 1)];
-    } else if (act === 'colLeft' || act === 'colRight') {
-      for (const r of table.rows) {
-        const ref = r.cells[Math.min(idx, r.cells.length - 1)];
-        const c = newCell(ref?.tagName === 'TH' ? 'th' : 'td');
-        if (!ref) r.append(c); else if (act === 'colLeft') ref.before(c); else ref.after(c);
-        if (r === tr) next = c;
+    const cells = selCells(), table = cell.closest('table');
+    const g = tblGrid(table), p = tblPos(g, cell);
+    let next = cell;
+    const at = (r, c) => { const g2 = tblGrid(table); const row = g2[Math.max(0, Math.min(r, g2.length - 1))] || []; return row[Math.max(0, Math.min(c, row.length - 1))]; };
+    const dropTable = () => { const para = document.createElement('p'); para.append(document.createElement('br')); table.replaceWith(para); next = para; };
+    switch (act) {
+      case 'rowAbove': tblInsertRow(table, p.r); next = at(p.r, p.c); break;
+      case 'rowBelow': tblInsertRow(table, p.r1 + 1); next = at(p.r1 + 1, first ? 0 : p.c); break;
+      case 'colLeft': tblInsertCol(table, p.c); next = at(p.r, p.c); break;
+      case 'colRight': tblInsertCol(table, p.c1 + 1); next = at(p.r, p.c1 + 1); break;
+      case 'delRow': if (g.length <= 1 || !tblDeleteRow(table, p.r)) dropTable(); else next = at(p.r, p.c); break;
+      case 'delCol': if (tblWidth(g) <= 1 || !tblDeleteCol(table, p.c)) dropTable(); else next = at(p.r, p.c); break;
+      case 'delTable': dropTable(); break;
+      case 'merge': next = tblMerge(table, cells) || cell; break;
+      case 'split': cells.forEach((c) => tblSplit(table, c)); break;
+      case 'headRow': tblHeadRow(table, !isHeadRow(table)); next = at(p.r, p.c); break;
+      case 'headCol': tblHeadCol(table, !isHeadCol(table)); next = at(p.r, p.c); break;
+      case 'align': cells.forEach((c) => tblStyle(c, 'text-align', val === 'left' ? '' : val)); break;
+      case 'valign': cells.forEach((c) => tblStyle(c, 'vertical-align', val)); break;
+      case 'shade': cells.forEach((c) => tblStyle(c, 'background-color', val)); break;
+      case 'fit': tblStyle(table, 'width', table.style.width === '100%' ? '' : '100%'); break;
+      case 'equal': {
+        const w = `${+(100 / tblWidth(g)).toFixed(2)}%`;
+        tblStyle(table, 'width', '100%');
+        for (const c of table.querySelectorAll('th, td')) tblStyle(c, 'width', c.colSpan > 1 ? '' : w);
+        break;
       }
-    } else if (act === 'delRow') {
-      if (table.rows.length <= 1) dropTable();
-      else {
-        const ri = tr.rowIndex, sec = tr.parentElement;
-        tr.remove();
-        if (!sec.rows.length) sec.remove();
-        const nr = table.rows[Math.min(ri, table.rows.length - 1)];
-        next = nr.cells[Math.min(idx, nr.cells.length - 1)];
-      }
-    } else if (act === 'delCol') {
-      if (width <= 1) dropTable();
-      else {
-        for (const r of [...table.rows]) { r.cells[Math.min(idx, r.cells.length - 1)]?.remove(); if (!r.cells.length) r.remove(); }
-        next = tr.isConnected && tr.cells.length ? tr.cells[Math.min(idx, tr.cells.length - 1)] : table.rows[0]?.cells[0];
-      }
-    } else if (act === 'delTable') dropTable();
-    if (next) caretIn(next);
+      case 'autoSize':
+        tblStyle(table, 'width', '');
+        for (const c of table.querySelectorAll('th, td')) { tblStyle(c, 'width', ''); tblStyle(c, 'height', ''); }
+        break;
+      default: return;
+    }
+    const styling = ['align', 'valign', 'shade', 'fit', 'equal', 'autoSize'].includes(act); // keep the selection to style more
+    if (!styling) {
+      if (!next?.isConnected) next = table.isConnected ? table.rows[0]?.cells[0] : null;
+      if (next) caretIn(next);
+    } else keep();
     onChange(); refresh();
+  };
+  const AL = {
+    left: 'M3 5h18v2H3zm0 4h12v2H3zm0 4h18v2H3zm0 4h12v2H3z', center: 'M3 5h18v2H3zm3 4h12v2H6zm-3 4h18v2H3zm3 4h12v2H6z', right: 'M3 5h18v2H3zm6 4h12v2H9zm-6 4h18v2H3zm6 4h12v2H9z',
+    top: 'M4 3h16v2H4zm4 4h8v7H8z', middle: 'M4 11h16v2H4zM8 5h8v4H8zm0 10h8v4H8z', bottom: 'M4 19h16v2H4zm4-9h8v7H8z',
+  };
+  const tblMenu = (table, cells) => {
+    const one = cells[0], multi = cells.length > 1, spanned = cells.some((c) => c.colSpan > 1 || c.rowSpan > 1);
+    const b = (act, label, { v = '', title = '', cls = '', on = false, dis = false } = {}) => `<button type="button" class="rte-tbl-b${cls ? ` ${cls}` : ''}${on ? ' on' : ''}" data-tbl="${act}" data-v="${esc(v)}" title="${esc(title || label)}"${dis ? ' disabled' : ''}>${label}</button>`;
+    const row = (name, html) => `<div class="rte-tbl-row"><span class="rte-tbl-lbl">${name}</span><div class="rte-tbl-btns">${html}</div></div>`;
+    const al = one.style.textAlign || 'left', va = one.style.verticalAlign || 'top', bg = one.style.backgroundColor;
+    const n = multi ? `${cells.length} cells` : 'cell';
+    return row('Row', b('rowAbove', '↑ Above', { title: 'Insert row above' }) + b('rowBelow', '↓ Below', { title: 'Insert row below (Tab in the last cell)' }) + b('delRow', 'Delete', { cls: 'danger', title: 'Delete row' }))
+      + row('Column', b('colLeft', '← Left', { title: 'Insert column left' }) + b('colRight', 'Right →', { title: 'Insert column right' }) + b('delCol', 'Delete', { cls: 'danger', title: 'Delete column' }))
+      + row('Cells', b('merge', 'Merge', { dis: !multi, title: multi ? `Merge the ${cells.length} selected cells into one` : 'Select two or more cells (drag across them), then Merge' }) + b('split', 'Split', { dis: !spanned, title: spanned ? 'Split the merged cell back into single cells' : 'Only a merged cell can be split' }))
+      + row('Header', b('headRow', 'Top row', { on: isHeadRow(table), title: 'First row as a shaded header row' }) + b('headCol', 'First column', { on: isHeadCol(table), title: 'First column as shaded header cells' }))
+      + row('Align', ['left', 'center', 'right'].map((a) => b('align', ICON(AL[a]), { v: a, on: al === a, title: `Align ${n} ${a}`, cls: 'ic' })).join('')
+        + '<span class="rte-sep"></span>' + ['top', 'middle', 'bottom'].map((a) => b('valign', ICON(AL[a]), { v: a, on: va === a, title: `Align ${n} to the ${a}`, cls: 'ic' })).join(''))
+      + row('Shading', `<button type="button" class="rte-tbl-sw none${bg ? '' : ' on'}" data-tbl="shade" data-v="" title="No shading">×</button>${TBL_SHADES.map(([c, name]) => `<button type="button" class="rte-tbl-sw${bg && sameColor(bg, c) ? ' on' : ''}" data-tbl="shade" data-v="${c}" style="background:${c}" title="${name} shading for ${n}"></button>`).join('')}`)
+      + row('Size', b('fit', 'Full width', { on: table.style.width === '100%', title: 'Stretch the table to the full width' }) + b('equal', 'Equal columns', { title: 'Full width, all columns the same width' }) + b('autoSize', 'Auto', { title: 'Clear all widths and heights: fit the text' }))
+      + `<div class="rte-tbl-foot">${b('delTable', 'Delete table', { cls: 'danger' })}<span>Drag a cell's edge to resize · select cells to merge or style them together</span></div>`;
   };
   const openTblPop = () => {
     keep();
     if (!tblPop.hidden) { tblPop.hidden = true; return; }
-    if (cellAt()) {
-      const it = (act, label, cls = '') => `<button type="button" class="rte-tbl-item ${cls}" data-tbl="${act}">${label}</button>`;
+    const cell = cellAt();
+    if (cell) {
       tblPop.className = 'rte-tbl-pop menu';
-      tblPop.innerHTML = `${it('rowAbove', 'Insert row above')}${it('rowBelow', 'Insert row below')}${it('colLeft', 'Insert column left')}${it('colRight', 'Insert column right')}<hr>${it('delRow', 'Delete row', 'danger')}${it('delCol', 'Delete column', 'danger')}${it('delTable', 'Delete table', 'danger')}`;
+      tblPop.innerHTML = tblMenu(cell.closest('table'), selCells());
     } else {
       tblPop.className = 'rte-tbl-pop';
       tblPop.innerHTML = `<div class="rte-tbl-grid">${Array.from({ length: 64 }, (_, i) => `<i data-tr="${Math.floor(i / 8) + 1}" data-tc="${(i % 8) + 1}"></i>`).join('')}</div><div class="rte-tbl-size">Insert table</div>`;
     }
+    // keep it on screen: shift left when it would overflow, open upwards when there's no room below
+    tblPop.style.left = ''; tblPop.style.top = ''; tblPop.style.bottom = '';
     tblPop.hidden = false;
+    const r = tblPop.getBoundingClientRect();
+    if (r.right > innerWidth - 8) tblPop.style.left = `${Math.round(innerWidth - 8 - r.right)}px`;
+    if (r.bottom > innerHeight - 8 && r.top - r.height - 34 > 8) { tblPop.style.top = 'auto'; tblPop.style.bottom = '30px'; }
   };
+  // Drag a cell's right edge to resize its column, its bottom edge to resize its row.
+  let edge = null, sizing = false;
+  const EDGE = 5;
+  const edgeAt = (e) => {
+    const cell = e.target.closest?.('td, th');
+    if (!cell || !ed.contains(cell)) return null;
+    const bx = cell.getBoundingClientRect();
+    if (bx.right - e.clientX <= EDGE) return { cell, kind: 'col' };
+    if (bx.bottom - e.clientY <= EDGE) return { cell, kind: 'row' };
+    if (e.clientX - bx.left <= EDGE && cell.previousElementSibling) return { cell: cell.previousElementSibling, kind: 'col' };
+    return null;
+  };
+  const edgeCursor = (k) => { ed.classList.toggle('rte-col-resize', k === 'col'); ed.classList.toggle('rte-row-resize', k === 'row'); };
+  ed.addEventListener('mousemove', (e) => { if (!sizing) { edge = edgeAt(e); edgeCursor(edge?.kind); } });
+  ed.addEventListener('mouseleave', () => { if (!sizing) { edge = null; edgeCursor(null); } });
+  ed.addEventListener('mousedown', (e) => {
+    if (!edge || e.button !== 0) return;
+    e.preventDefault();
+    const { cell, kind } = edge, table = cell.closest('table'), g = tblGrid(table), p = tblPos(g, cell);
+    const x0 = e.clientX, y0 = e.clientY;
+    let targets, start;
+    if (kind === 'col') { // every single-column cell whose right edge is this line
+      targets = [...new Set(g.map((row) => row[p.c1]))].filter((c) => c && c.colSpan <= 1);
+      if (!targets.length) targets = [cell];
+      start = targets[0].getBoundingClientRect().width;
+    } else {
+      targets = [...table.rows[p.r1].cells];
+      start = table.rows[p.r1].getBoundingClientRect().height;
+    }
+    sizing = true;
+    document.body.classList.add(kind === 'col' ? 'rte-sizing-col' : 'rte-sizing-row');
+    const move = (ev) => {
+      if (kind === 'col') { const w = Math.max(24, Math.round(start + ev.clientX - x0)); targets.forEach((c) => tblStyle(c, 'width', `${w}px`)); }
+      else { const h = Math.max(18, Math.round(start + ev.clientY - y0)); targets.forEach((c) => tblStyle(c, 'height', `${h}px`)); }
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      document.body.classList.remove('rte-sizing-col', 'rte-sizing-row');
+      sizing = false; edge = null; edgeCursor(null);
+      onChange();
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
   tblPop.addEventListener('mousedown', (e) => e.preventDefault()); // keep the editor's selection
   tblPop.addEventListener('mouseover', (e) => {
     const c = e.target.closest('[data-tr]');
@@ -524,9 +825,9 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
   });
   tblPop.addEventListener('click', (e) => {
     const c = e.target.closest('[data-tr]'), a = e.target.closest('[data-tbl]');
-    if (!c && !a) return;
+    if ((!c && !a) || a?.disabled) return;
     tblPop.hidden = true;
-    if (c) insertTable(+c.dataset.tr, +c.dataset.tc); else tblEdit(a.dataset.tbl);
+    if (c) insertTable(+c.dataset.tr, +c.dataset.tc); else tblEdit(a.dataset.tbl, a.dataset.v);
   });
   const link = async () => {
     keep();
@@ -649,7 +950,7 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
         e.preventDefault();
         const cells = [...cell.closest('table').querySelectorAll('th, td')];
         const i = cells.indexOf(cell) + (e.shiftKey ? -1 : 1);
-        if (i >= cells.length) { keep(); tblEdit('rowBelow', { first: true }); } else if (i >= 0) caretIn(cells[i], true);
+        if (i >= cells.length) { keep(); tblEdit('rowBelow', '', { first: true }); } else if (i >= 0) caretIn(cells[i], true);
         return;
       }
     }
@@ -708,20 +1009,28 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
     if (html) {
       const tmp = document.createElement('div');
       tmp.innerHTML = rteClean(html.replace(/<!--[\s\S]*?-->/g, ''));
-      tmp.querySelectorAll('[style]').forEach((n) => { const color = n.style.color; n.removeAttribute('style'); if (color && n.nodeName === 'SPAN') n.style.color = color; });
+      tmp.querySelectorAll('[style]').forEach(keepStyles); // text colour, and a table's alignment, shading and sizes
       tmp.querySelectorAll('[class]').forEach((n) => { if (!n.classList.contains('atmention')) n.removeAttribute('class'); });
       document.execCommand('insertHTML', false, tmp.innerHTML);
     } else if (MD_TABLE.test(text) && !cellAt()) {
       // Markdown pasted as text (a draft with a table): insert it formatted, the table as a real table
-      document.execCommand('insertHTML', false, rteClean(marked.parse(text)));
+      document.execCommand('insertHTML', false, rteClean(tblDefaults(marked.parse(text))));
     } else document.execCommand('insertText', false, text);
     onChange();
     const pasted = text || '';
     if (pasted) suggest((u) => pasted.includes(u.url));
   });
+  // Cells selected by dragging across them are outlined as a block (the browser only highlights text in order).
+  const markCells = () => {
+    const s = getSelection();
+    const cells = document.activeElement === ed && s.rangeCount && !s.isCollapsed ? selCells() : [];
+    for (const c of ed.querySelectorAll('.rte-cell-sel')) if (!cells.includes(c)) { c.classList.remove('rte-cell-sel'); if (!c.className) c.removeAttribute('class'); }
+    if (cells.length > 1) cells.forEach((c) => c.classList.add('rte-cell-sel'));
+  };
   const track = () => {
     if (!bar.isConnected) { document.removeEventListener('selectionchange', track); hideSuggest(); return; }
     if (document.activeElement === ed) keep();
+    markCells();
   };
   document.addEventListener('selectionchange', track);
   const outside = (e) => {
@@ -842,8 +1151,10 @@ function commentHtml(c, origin) {
   const frag = DOMPurify.sanitize(c.html, {
     RETURN_DOM_FRAGMENT: true,
     FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed', 'svg', 'math', 'video', 'audio'],
-    FORBID_ATTR: ['style', 'class', 'id', 'width', 'height', 'srcset'],
+    FORBID_ATTR: ['class', 'id', 'width', 'height', 'srcset'],
   });
+  // Styles only where they carry meaning: a table's alignment, shading and sizes (not the email's fonts and colours).
+  frag.querySelectorAll('[style]').forEach((n) => { if (/^(TD|TH|TABLE)$/.test(n.nodeName)) keepStyles(n); else n.removeAttribute('style'); });
   frag.querySelectorAll('img').forEach((img) => {
     const src = img.getAttribute('src') || '';
     if (origin && isZdFile(src, origin)) {
@@ -2148,7 +2459,7 @@ function copyRich(html, text) {
   return ok && set;
 }
 /** A draft is Markdown, shown and copied formatted the way the Update ticket editor writes it (same tags). */
-const draftHtml = (raw) => dropEmptyParas(rteClean(marked.parse(raw))).trim();
+const draftHtml = (raw) => dropEmptyParas(rteClean(tblDefaults(marked.parse(raw)))).trim();
 function draftCard(text) {
   const raw = text.replace(/^\n+|\s+$/g, '');
   const card = document.createElement('div');
