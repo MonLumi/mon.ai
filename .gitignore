@@ -2,4 +2,3 @@ node_modules/
 data/
 config/*
 !config/*.example.json
-.builder-work/

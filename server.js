@@ -255,7 +255,7 @@ app.get('/api/sessions', wrap((req) => assistant.listSessions(req.query.org, { a
 app.post('/api/sessions/:id/archive', wrap((req) => ({ archived: assistant.archiveSession(req.params.id, 'Archived by you') })));
 app.post('/api/sessions/:id/unarchive', wrap((req) => assistant.unarchiveSession(req.params.id)));
 app.post('/api/sessions/:id/cooldown', wrap((req) => assistant.setCooldown(req.params.id, req.body.on !== false)));
-app.post('/api/sessions', wrap((req) => assistant.createSession({ org: req.body.org ? orgCode(req.body.org) : 'All', title: req.body.title, ticketId: req.body.ticketId, mode: req.body.mode })));
+app.post('/api/sessions', wrap((req) => assistant.createSession({ org: req.body.org ? orgCode(req.body.org) : 'All', title: req.body.title, ticketId: req.body.ticketId })));
 app.get('/api/sessions/:id', wrap((req) => assistant.getSession(req.params.id) || Promise.reject(new Error('Not found'))));
 // Delete = move to the Archive (recycle bin). ?forever=1 deletes an archived chat for good.
 app.delete('/api/sessions/:id', wrap((req) => (req.query.forever === '1' ? assistant.deleteForever(req.params.id) : assistant.trashSession(req.params.id))));

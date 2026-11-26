@@ -2413,12 +2413,10 @@ async function chatList(folder = null) {
       <div class="sub">${archived ? BIN[folder].intro : 'Each client chat can see that client’s tickets, Azure, Cloudflare and repositories. Deleting a chat moves it to the Archive; so does solving its ticket.'}</div></div>
     <div class="row"><input class="search" id="chatFilter" placeholder="Filter chats…">
       ${archived ? '' : `<select id="newChatOrg" class="select"><option value="">General</option>${orgs.map((o) => `<option>${esc(o)}</option>`).join('')}</select>
-      <button class="btn primary" id="newChatGo">New chat</button>
-      <button class="btn" id="newBuilderGo" title="A chat that works on mon.ai itself: it can read, write and commit in the mon-ai folder (code, skills, docs) and use skill-creator. It has no access to customer data.">🛠 New Builder chat</button>`}</div></div>
+      <button class="btn primary" id="newChatGo">New chat</button>`}</div></div>
     <div class="seg" style="margin-bottom:14px"><button class="${archived ? '' : 'active'}" onclick="location.hash='#/chat'">Active <span class="count">${active.length}</span></button>${Object.entries(BIN).map(([k, b]) => `<button class="${folder === k ? 'active' : ''}" onclick="location.hash='#/chat/${b.route}'">${k === 'deep' ? '🗃' : '🗑'} ${b.tab} <span class="count">${counts[k]}</span></button>`).join('')}</div>
     <div id="chatGroups"></div>`;
   $('#newChatGo')?.addEventListener('click', () => newChat($('#newChatOrg').value || null));
-  $('#newBuilderGo')?.addEventListener('click', () => newChat(null, { mode: 'builder' }));
   filterBox('#chatFilter', 'Filter chats…', sessions, (x, q) => hit(q, x.title, x.org, x.archive_reason, x.ticket_id && `#${x.ticket_id}`), (list, q) => {
     const by = new Map();
     for (const x of list) { const k = x.org === 'All' ? 'General' : x.org; if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
@@ -2465,9 +2463,7 @@ async function chatPage(id, opts = {}) {
     <div class="chat-head"><div style="min-width:0">${embedded
       // on the ticket workspace these go into the shared header (which already shows the client and ticket)
       ? `<div class="chat-chips"><span class="pill ai">✦ AI chat</span><span class="pill" title="The assistant can read Zendesk, Cloudflare, Azure/ADO and your local repos, never change them">🔒 read-only</span><span id="chatCostChip"></span>${s.archived_at ? '<span class="pill amber">archived</span>' : ''}</div>`
-      : `<div class="sub"><a href="#/chat">← All chats</a></div><h1>${esc(s.title)}</h1><div class="sub">${s.mode === 'builder'
-        ? '<span class="pill amber" title="Read, write and commit only inside the mon-ai folder (not data/ or config/). Bash is limited to git (no push), node, npm, py and claude. No customer tools.">🛠 Builder</span> works on mon.ai itself · writes and commits in the mon-ai folder only · no customer data · you push'
-        : `${isClient ? esc(s.org) : 'General'} · read-only tools: Zendesk, Cloudflare, Azure/ADO, local repos`}</div>`}</div>
+      : `<div class="sub"><a href="#/chat">← All chats</a></div><h1>${esc(s.title)}</h1><div class="sub">${isClient ? esc(s.org) : 'General'} · read-only tools: Zendesk, Cloudflare, Azure/ADO, local repos</div>`}</div>
       <div class="row"><label class="model-pick" title="Model for this chat">Model <select id="chatModel">${modelOptions(models, s.model || '', s.defaultModel)}</select></label>
         ${hasClient ? `<button class="btn small" id="sideToggle" title="Show or hide the ${esc(s.org)} panel">${esc(s.org)} panel</button>` : ''}
         <span class="menu-wrap"><button class="btn small" id="chatMenuBtn" aria-haspopup="menu" aria-expanded="false" title="More actions">⋯</button>
@@ -2494,7 +2490,7 @@ async function chatPage(id, opts = {}) {
       <div class="composer-row">
         <button type="button" class="icon-btn attach-btn" id="attachBtn" title="Attach images or files (or paste / drop them where the cursor is)">📎</button>
         <input type="file" id="fileInput" multiple hidden>
-        <div id="input" class="editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="${s.mode === 'builder' ? 'Ask for a change to mon.ai or its skills, e.g. “Use skill-creator to improve the triage-ticket description”. Ctrl+Enter to send.' : 'Message mon.ai…  Type / for skills. Paste or drop images and files where you want them. Ctrl+Enter to send.'}"></div>
+        <div id="input" class="editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Message mon.ai…  Type / for skills. Paste or drop images and files where you want them. Ctrl+Enter to send."></div>
         ${s.ticket_id ? `<button type="button" class="btn zd-refresh" id="zdRefresh" title="Bring in new comments from ticket #${s.ticket_id} since this chat last looked (runs /review-ticket-updates)">↻ Zendesk</button>` : ''}
         <button class="btn primary" id="sendBtn" title="Send (Ctrl+Enter)">Send</button>
       </div>
