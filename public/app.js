@@ -577,11 +577,16 @@ function rteHtml(ed, { preview = false } = {}) {
   })).trim();
 }
 const RTE_IMG = /^image\/(png|jpeg|gif|webp|bmp)$/;
-// URLs written as plain text: http(s)://… or www.…, without trailing punctuation such as the full stop of a sentence.
-const RTE_URL = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi;
-const RTE_URL_ONLY = /^(?:https?:\/\/|www\.|mailto:)\S+$/i;
+// URLs written as plain text, without trailing punctuation such as the full stop of a sentence:
+// http(s)://…, www.…, or a bare domain (support.example.com/agent/tickets/1). A bare domain counts when it
+// has a common TLD or a path after it, so file names like readme.md or node.js are left alone.
+const RTE_TLDS = 'com|net|org|io|co|dev|app|ai|au|uk|vn|nz|sg|us|ca|de|fr|nl|jp|in|eu|info|biz|edu|gov|cloud|site|tech|me|ly|gg|tv|xyz|online|store|page|zendesk';
+const RTE_URL = new RegExp(`(?<![@\\w.\\/:-])(?:https?:\\/\\/[^\\s<>"'\`]+|www\\.[^\\s<>"'\`]+|(?:[a-z0-9-]+\\.)+(?:[a-z]{2,24}(?=[/?#])|(?:${RTE_TLDS})(?![\\w-]))[^\\s<>"'\`]*)`, 'gi');
 const rteTrimUrl = (u) => { let s = u.replace(/[.,;:!?'"]+$/, ''); while (/[)\]}]$/.test(s) && (s.split(/[([{]/).length < s.split(/[)\]}]/).length)) s = s.slice(0, -1).replace(/[.,;:!?'"]+$/, ''); return s; };
-const rteHref = (u) => (/^www\./i.test(u) ? `https://${u}` : u);
+/** The text is one URL (or mailto:) and nothing else. */
+const rteIsUrl = (s) => /^mailto:\S+$/i.test(s) || (() => { const m = s.match(RTE_URL); return m?.length === 1 && rteTrimUrl(m[0]) === s; })();
+/** Link address for a URL as written: https:// is added when it has no scheme (the text shown stays as written). */
+const rteHref = (u) => (/^(https?:\/\/|mailto:)/i.test(u) ? u : `https://${u}`);
 /** Plain-text URLs in the editor (not already in a link, code or code block): [{ node, start, end, url }]. */
 function rteBareUrls(ed) {
   const out = [];
@@ -589,7 +594,7 @@ function rteBareUrls(ed) {
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
     for (const m of n.data.matchAll(RTE_URL)) {
       const url = rteTrimUrl(m[0]);
-      if (url.length > 8) out.push({ node: n, start: m.index, end: m.index + url.length, url });
+      if (url.length >= 4 && url.includes('.')) out.push({ node: n, start: m.index, end: m.index + url.length, url });
     }
   }
   return out;
@@ -627,7 +632,7 @@ function linkDialog({ url = '', text = '', editing = false } = {}) {
       else if (/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(u)) u = `mailto:${u}`;
       else if (!/^(https?:\/\/|mailto:)/i.test(u) && /^[\w-]+(\.[\w-]+)+([/?#].*)?$/.test(u)) u = `https://${u}`;
       if (!/^(https?:\/\/\S+|mailto:\S+)$/i.test(u)) { err.textContent = 'Links must start with https://, http:// or mailto:'; err.hidden = false; uIn.focus(); return; }
-      done({ url: u, text: tIn.value.trim() });
+      done({ url: u, text: tIn.value.trim() || uIn.value.trim() }); // no display text: show the address as you typed it
     });
     uIn.addEventListener('input', () => { err.hidden = true; });
     document.addEventListener('keydown', key, true);
@@ -834,10 +839,10 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
     hideSuggest();
     const cur = inBlock('A');
     const selText = cur ? cur.textContent : (saved ? saved.toString() : '');
-    const selIsUrl = !cur && RTE_URL_ONLY.test(selText.trim());
+    const selIsUrl = !cur && rteIsUrl(selText.trim());
     const r = await linkDialog({
       url: cur ? cur.getAttribute('href') || '' : selIsUrl ? rteHref(selText.trim()) : '',
-      text: selIsUrl ? '' : selText,
+      text: selText, // a selected URL stays as written; only the link address gets https://
       editing: !!cur,
     });
     restore();
