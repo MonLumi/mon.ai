@@ -3347,27 +3347,73 @@ view.addEventListener('click', (e) => {
 });
 let pendingDraft = null;
 let pendingSkillDraft = null; // from "＋ Skill" in a chat
-const userText = (t) => esc(t).replace(/^\/([a-z0-9-]+)/, '<span class="skill-tag">/$1</span>');
+// The leading /name always; a /name later in the text only when it's a known skill (not a path like /etc).
+const userText = (t) => esc(t).replace(/(^|\s)\/([a-z0-9][a-z0-9-]*)(?=$|[\s.,;:!?)])/g, (all, pre, name, at) =>
+  (at === 0 || (skillsCache || []).some((s) => s.name === name)) ? `${pre}<span class="skill-tag">/${name}</span>` : all);
 
-/** "/" at the start of the message box lists skills; Tab/Enter picks one. */
+/** The "/word" being typed right before the caret (at the start or after a space), or null.
+ *  `replace(text)` swaps that token for `text` and leaves the caret after it. */
+function slashAtCaret(input) {
+  const re = /(^|\s)\/([a-z0-9-]*)$/;
+  if (!input.isContentEditable) {
+    const pos = input.selectionStart ?? input.value.length;
+    if (input.selectionEnd !== pos) return null;
+    const m = input.value.slice(0, pos).match(re);
+    if (!m) return null;
+    const start = pos - m[2].length - 1;
+    return { query: m[2], replace: (text) => {
+      input.value = input.value.slice(0, start) + text + input.value.slice(pos).replace(/^ /, '');
+      input.selectionStart = input.selectionEnd = start + text.length;
+    } };
+  }
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return null;
+  const node = sel.anchorNode, off = sel.anchorOffset;
+  if (!node || node.nodeType !== 3 || !input.contains(node)) {
+    // empty box, or the caret sits between elements: fall back to "whole message is /word"
+    const m = edGet(input).match(/^\/([a-z0-9-]*)$/);
+    return m ? { query: m[1], replace: (text) => edSet(input, text) } : null;
+  }
+  const m = node.nodeValue.slice(0, off).match(re);
+  if (!m) return null;
+  const start = off - m[2].length - 1;
+  return { query: m[2], replace: (text) => {
+    node.nodeValue = node.nodeValue.slice(0, start) + text + node.nodeValue.slice(off).replace(/^[  ]/, '');
+    const r = document.createRange();
+    r.setStart(node, start + text.length);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  } };
+}
+
+/** "/" at the start of the message box, or after a space anywhere in it, lists skills; Tab/Enter picks one. */
 async function attachSkillPicker(input, org) {
   const list = (await getSkills()).filter((s) => !s.org || !org || org === 'All' || s.org.toLowerCase() === org.toLowerCase());
   const pop = document.createElement('div');
   pop.className = 'skill-pop';
   pop.hidden = true;
   (input.closest('.composer') || input.closest('form') || input.parentElement).prepend(pop); // chat box, or the Ask AI starter
-  let items = [], sel = 0;
+  let items = [], sel = 0, tok = null;
   const draw = () => {
-    const m = edGet(input).match(/^\/([a-z0-9-]*)$/);
-    items = m ? byCategory(list.filter((s) => s.name.startsWith(m[1]) || (m[1] && (s.category || '').toLowerCase().startsWith(m[1])))).flatMap(([, g]) => g) : [];
+    tok = slashAtCaret(input);
+    const q = tok?.query;
+    items = tok ? byCategory(list.filter((s) => s.name.startsWith(q) || (q && (s.category || '').toLowerCase().startsWith(q)))).flatMap(([, g]) => g) : [];
     pop.hidden = !items.length;
     sel = Math.min(sel, Math.max(0, items.length - 1));
     // a small heading wherever the category changes (headings can't be picked)
     pop.innerHTML = items.map((s, i) => `${i === 0 || (items[i - 1].category || 'Other') !== (s.category || 'Other') ? `<div class="skill-pop-cat">${esc(s.category || 'Other')}</div>` : ''}<div class="item ${i === sel ? 'sel' : ''}" data-i="${i}"><b class="mono">/${esc(s.name)}</b><span class="sub">${esc(s.description)}</span></div>`).join('');
     pop.querySelector('.item.sel')?.scrollIntoView({ block: 'nearest' });
   };
-  const pick = (i) => { edSet(input, `/${items[i].name} `); pop.hidden = true; };
+  const pick = (i) => {
+    // a trailing normal space; a contenteditable would drop it at the end of a text node, so use nbsp there
+    if (tok) tok.replace(`/${items[i].name}${input.isContentEditable ? ' ' : ' '}`); else edSet(input, `/${items[i].name} `);
+    pop.hidden = true;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
   input.addEventListener('input', draw);
+  input.addEventListener('click', draw);
+  input.addEventListener('keyup', (e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') draw(); });
   input.addEventListener('keydown', (e) => {
     if (pop.hidden) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; draw(); }
