@@ -3510,8 +3510,14 @@ async function ticketPage(id, chatId) {
       } catch (err) { toast(err.message); enable(); }
     };
     drawNoChatHead(tid);
-    $('#tvAsk').onclick = () => go(ASK_PROMPT(tid), 'triage-ticket');
     const own = $('#tvOwn');
+    // Ask AI doesn't send right away: it puts /triage-ticket <id> in the box so you can add instructions, then Ask.
+    $('#tvAsk').onclick = () => {
+      const extra = own.q.value.trim().replace(/^\/triage-ticket\b\s*(#?\d+\b\s*)?/, '');
+      own.q.value = `${ASK_PROMPT(tid)} ${extra}`;
+      own.q.focus();
+      own.q.setSelectionRange(own.q.value.length, own.q.value.length);
+    };
     own.q.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); own.requestSubmit(); } };
     // "/" lists skills, like the chat box. A skill runs with the ticket number as its first argument
     // (and on that skill's model), e.g. "/check-site-health cqu.edu.au" → "/check-site-health 22925 cqu.edu.au".
