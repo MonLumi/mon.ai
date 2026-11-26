@@ -301,8 +301,12 @@ function confirmDialog({ title, intro = '', rows = [], ok = 'OK', cancel = 'Canc
 
 // ---------------- rich text editor (Zendesk-style formatting for replies and notes) ----------------
 // Tags Zendesk keeps in a comment; everything else is stripped on paste and before sending.
-const RTE_TAGS = ['p', 'br', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li', 'a', 'h1', 'h2', 'h3', 'h4', 'hr', 'font'];
-const rteClean = (html) => DOMPurify.sanitize(html, { ALLOWED_TAGS: RTE_TAGS, ALLOWED_ATTR: ['href', 'class', 'style', 'color'], ALLOWED_URI_REGEXP: /^(https?:|mailto:|\/users\/\d+$)/i });
+const RTE_TAGS = ['p', 'br', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li', 'a', 'h1', 'h2', 'h3', 'h4', 'hr', 'font', 'table', 'thead', 'tbody', 'tr', 'th', 'td'];
+const RTE_ATTR = ['href', 'class', 'style', 'color', 'colspan', 'rowspan'];
+const rteClean = (html) => DOMPurify.sanitize(html, { ALLOWED_TAGS: RTE_TAGS, ALLOWED_ATTR: RTE_ATTR, ALLOWED_URI_REGEXP: /^(https?:|mailto:|\/users\/\d+$)/i });
+/** Text with a Markdown table in it (a | --- | --- | separator line), e.g. a draft copied as plain text. */
+const MD_TABLE = /^ *\|?(?: *:?-{3,}:? *\|)+ *(?::?-{3,}:?)? *\|? *$/m;
+const TABLE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10M15 9.5v10"/></svg>';
 const RTE_COLORS = ['#1f2937', '#6b7280', '#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', '#2563eb', '#7c3aed', '#db2777'];
 const ICON = (d) => `<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
 function rteToolbar() {
@@ -322,6 +326,7 @@ function rteToolbar() {
     ${b('quote', 'Quote', ICON('M7 7h4v4H8.5c0 2 1 3 2.5 3.5V17c-3-.5-5-2.8-5-6.5V7zm8 0h4v4h-2.5c0 2 1 3 2.5 3.5V17c-3-.5-5-2.8-5-6.5V7z'))}
     ${b('code', 'Code span', ICON('M8.6 16.6 4 12l4.6-4.6L10 8.8 6.8 12l3.2 3.2zm6.8 0L14 15.2l3.2-3.2L14 8.8l1.4-1.4L20 12z'))}
     ${b('codeblock', 'Code block', ICON('M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm1 2v14h14V5zm4.4 10.6L6.8 13l2.6-2.6 1.1 1.1L9 13l1.5 1.5zm5.2 0-1.1-1.1L15 13l-1.5-1.5 1.1-1.1L17.2 13z'))}
+    <span class="rte-tbl-wrap">${b('table', 'Table (Tab moves between cells)', TABLE_ICON)}<div class="rte-tbl-pop" hidden></div></span>
     ${b('link', 'Link (Ctrl+K)', ICON('M10.6 13.4a1 1 0 0 1 0-1.4l3.5-3.5a1 1 0 1 1 1.4 1.4L12 13.4a1 1 0 0 1-1.4 0zM8.5 19a4.5 4.5 0 0 1-3.2-7.7l2-2 1.4 1.4-2 2a2.5 2.5 0 0 0 3.6 3.6l2-2 1.4 1.4-2 2A4.5 4.5 0 0 1 8.5 19zm8.2-6.3-1.4-1.4 2-2a2.5 2.5 0 0 0-3.6-3.6l-2 2-1.4-1.4 2-2a4.5 4.5 0 0 1 6.4 6.4z'))}
     ${b('insertHorizontalRule', 'Horizontal rule', ICON('M3 11h18v2H3z'))}
     ${sep}
@@ -354,7 +359,7 @@ function rteHtml(ed, { preview = false } = {}) {
     img.replaceWith(n);
   });
   return dropEmptyParas(DOMPurify.sanitize(c.innerHTML, {
-    ALLOWED_TAGS: [...RTE_TAGS, 'img'], ALLOWED_ATTR: ['href', 'class', 'style', 'color', 'src', 'alt'],
+    ALLOWED_TAGS: [...RTE_TAGS, 'img'], ALLOWED_ATTR: [...RTE_ATTR, 'src', 'alt'],
     ALLOWED_URI_REGEXP: preview ? /^(https?:|mailto:|blob:|\/users\/\d+$)/i : /^(https?:|mailto:|\/users\/\d+$)/i,
   })).trim();
 }
@@ -433,9 +438,96 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
     bar.querySelector('[data-cmd="quote"]').classList.toggle('active', !!inBlock('BLOCKQUOTE'));
     bar.querySelector('[data-cmd="codeblock"]').classList.toggle('active', !!inBlock('PRE'));
     bar.querySelector('[data-cmd="code"]').classList.toggle('active', !!inBlock('CODE'));
+    bar.querySelector('[data-cmd="table"]').classList.toggle('active', !!cellAt());
     const h = ['H1', 'H2', 'H3', 'H4'].find((x) => inBlock(x));
     bar.querySelector('.rte-block').value = h ? h.toLowerCase() : 'p';
   };
+  // ---- tables: the Table button inserts one (size grid); with the caret in a table it opens row / column actions
+  const cellAt = () => inBlock('TD') || inBlock('TH');
+  const tblPop = bar.querySelector('.rte-tbl-pop');
+  const caretIn = (cell, select = false) => {
+    const r = document.createRange(); r.selectNodeContents(cell); if (!select) r.collapse(true);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r); keep();
+  };
+  const newCell = (tag) => { const c = document.createElement(tag); c.append(document.createElement('br')); return c; };
+  const insertTable = (rows, cols) => {
+    restore();
+    const tr = (tag) => `<tr>${`<${tag}><br></${tag}>`.repeat(cols)}</tr>`;
+    const head = rows > 1 ? `<thead>${tr('th')}</thead>` : '';
+    document.execCommand('insertHTML', false, `<table data-new="1">${head}<tbody>${tr('td').repeat(rows > 1 ? rows - 1 : 1)}</tbody></table><p><br></p>`);
+    const t = ed.querySelector('table[data-new]');
+    if (t) { t.removeAttribute('data-new'); caretIn(t.rows[0].cells[0]); }
+    onChange(); refresh();
+  };
+  const tblEdit = (act, { first = false } = {}) => {
+    restore();
+    const cell = cellAt();
+    if (!cell) return;
+    const tr = cell.parentElement, table = cell.closest('table'), idx = cell.cellIndex;
+    const width = Math.max(...[...table.rows].map((r) => [...r.cells].reduce((n, c) => n + (c.colSpan || 1), 0)));
+    let next = null;
+    const dropTable = () => { const p = document.createElement('p'); p.append(document.createElement('br')); table.replaceWith(p); next = p; };
+    if (act === 'rowAbove' || act === 'rowBelow') {
+      const head = tr.parentElement.tagName === 'THEAD';
+      const row = document.createElement('tr');
+      for (let i = 0; i < width; i++) row.append(newCell(head && act === 'rowAbove' ? 'th' : 'td'));
+      if (act === 'rowAbove') tr.before(row);
+      else if (head) (table.tBodies[0] || table.createTBody()).prepend(row);
+      else tr.after(row);
+      next = row.cells[first ? 0 : Math.min(idx, row.cells.length - 1)];
+    } else if (act === 'colLeft' || act === 'colRight') {
+      for (const r of table.rows) {
+        const ref = r.cells[Math.min(idx, r.cells.length - 1)];
+        const c = newCell(ref?.tagName === 'TH' ? 'th' : 'td');
+        if (!ref) r.append(c); else if (act === 'colLeft') ref.before(c); else ref.after(c);
+        if (r === tr) next = c;
+      }
+    } else if (act === 'delRow') {
+      if (table.rows.length <= 1) dropTable();
+      else {
+        const ri = tr.rowIndex, sec = tr.parentElement;
+        tr.remove();
+        if (!sec.rows.length) sec.remove();
+        const nr = table.rows[Math.min(ri, table.rows.length - 1)];
+        next = nr.cells[Math.min(idx, nr.cells.length - 1)];
+      }
+    } else if (act === 'delCol') {
+      if (width <= 1) dropTable();
+      else {
+        for (const r of [...table.rows]) { r.cells[Math.min(idx, r.cells.length - 1)]?.remove(); if (!r.cells.length) r.remove(); }
+        next = tr.isConnected && tr.cells.length ? tr.cells[Math.min(idx, tr.cells.length - 1)] : table.rows[0]?.cells[0];
+      }
+    } else if (act === 'delTable') dropTable();
+    if (next) caretIn(next);
+    onChange(); refresh();
+  };
+  const openTblPop = () => {
+    keep();
+    if (!tblPop.hidden) { tblPop.hidden = true; return; }
+    if (cellAt()) {
+      const it = (act, label, cls = '') => `<button type="button" class="rte-tbl-item ${cls}" data-tbl="${act}">${label}</button>`;
+      tblPop.className = 'rte-tbl-pop menu';
+      tblPop.innerHTML = `${it('rowAbove', 'Insert row above')}${it('rowBelow', 'Insert row below')}${it('colLeft', 'Insert column left')}${it('colRight', 'Insert column right')}<hr>${it('delRow', 'Delete row', 'danger')}${it('delCol', 'Delete column', 'danger')}${it('delTable', 'Delete table', 'danger')}`;
+    } else {
+      tblPop.className = 'rte-tbl-pop';
+      tblPop.innerHTML = `<div class="rte-tbl-grid">${Array.from({ length: 64 }, (_, i) => `<i data-tr="${Math.floor(i / 8) + 1}" data-tc="${(i % 8) + 1}"></i>`).join('')}</div><div class="rte-tbl-size">Insert table</div>`;
+    }
+    tblPop.hidden = false;
+  };
+  tblPop.addEventListener('mousedown', (e) => e.preventDefault()); // keep the editor's selection
+  tblPop.addEventListener('mouseover', (e) => {
+    const c = e.target.closest('[data-tr]');
+    if (!c) return;
+    const [R, C] = [+c.dataset.tr, +c.dataset.tc];
+    tblPop.querySelectorAll('[data-tr]').forEach((x) => x.classList.toggle('on', +x.dataset.tr <= R && +x.dataset.tc <= C));
+    tblPop.querySelector('.rte-tbl-size').textContent = `${C} × ${R}${R > 1 ? ' (first row is the header)' : ''}`;
+  });
+  tblPop.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-tr]'), a = e.target.closest('[data-tbl]');
+    if (!c && !a) return;
+    tblPop.hidden = true;
+    if (c) insertTable(+c.dataset.tr, +c.dataset.tc); else tblEdit(a.dataset.tbl);
+  });
   const link = async () => {
     keep();
     hideSuggest();
@@ -519,8 +611,10 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
     const btn = e.target.closest('.rte-btn');
     if (!btn) return;
     const cmd = btn.dataset.cmd;
-    if (cmd === 'color') { colors.hidden = !colors.hidden; return; }
+    if (cmd === 'color') { tblPop.hidden = true; colors.hidden = !colors.hidden; return; }
     colors.hidden = true;
+    if (cmd === 'table') return openTblPop();
+    tblPop.hidden = true;
     if (cmd === 'link') return link();
     if (cmd === 'quote') return exec('formatBlock', inBlock('BLOCKQUOTE') ? 'p' : 'blockquote');
     if (cmd === 'codeblock') return exec('formatBlock', inBlock('PRE') ? 'p' : 'pre');
@@ -547,6 +641,18 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
   ed.addEventListener('keydown', (e) => {
     if (chip && e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); e.stopPropagation(); applySuggest(); return; }
     if (chip && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); pick(offered).forEach((u) => dismissed.add(u.url)); hideSuggest(); return; }
+    if (!tblPop.hidden && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tblPop.hidden = true; return; }
+    // Tab / Shift+Tab move between table cells; Tab in the last cell adds a row (not while the @mention list is open)
+    if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && !ed.parentElement?.querySelector('.mention-pop:not([hidden])')) {
+      const cell = cellAt();
+      if (cell) {
+        e.preventDefault();
+        const cells = [...cell.closest('table').querySelectorAll('th, td')];
+        const i = cells.indexOf(cell) + (e.shiftKey ? -1 : 1);
+        if (i >= cells.length) { keep(); tblEdit('rowBelow', { first: true }); } else if (i >= 0) caretIn(cells[i], true);
+        return;
+      }
+    }
     if ((e.key === ' ' || e.key === 'Enter') && !e.ctrlKey && !e.metaKey) { // remember a URL that ends right at the caret
       const s = getSelection();
       const n = s.anchorNode, off = s.anchorOffset;
@@ -605,6 +711,9 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
       tmp.querySelectorAll('[style]').forEach((n) => { const color = n.style.color; n.removeAttribute('style'); if (color && n.nodeName === 'SPAN') n.style.color = color; });
       tmp.querySelectorAll('[class]').forEach((n) => { if (!n.classList.contains('atmention')) n.removeAttribute('class'); });
       document.execCommand('insertHTML', false, tmp.innerHTML);
+    } else if (MD_TABLE.test(text) && !cellAt()) {
+      // Markdown pasted as text (a draft with a table): insert it formatted, the table as a real table
+      document.execCommand('insertHTML', false, rteClean(marked.parse(text)));
     } else document.execCommand('insertText', false, text);
     onChange();
     const pasted = text || '';
@@ -618,6 +727,7 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
   const outside = (e) => {
     if (!bar.isConnected) { document.removeEventListener('mousedown', outside); return; } // Zendesk panel re-rendered
     if (!e.target.closest('.rte-color-wrap')) colors.hidden = true;
+    if (!e.target.closest('.rte-tbl-wrap')) tblPop.hidden = true;
   };
   document.addEventListener('mousedown', outside);
 }
@@ -2024,11 +2134,28 @@ async function copyText(text) {
 const COPY_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M8 3h11a2 2 0 0 1 2 2v11h-2V5H8V3zM4 7h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zm0 2v11h11V9H4z"/></svg>';
 const copyBtn = (label = 'Copy') => `<button type="button" class="copy-btn" data-copy>${COPY_ICON}<span>${label}</span></button>`;
 
+/**
+ * Copy as formatted text (HTML) with a plain-text fallback, so pasting into the Update ticket editor,
+ * Zendesk, Outlook or Teams keeps headings, lists, links and tables. Uses the copy event, which also works on http.
+ */
+function copyRich(html, text) {
+  let set = false;
+  const on = (e) => { e.clipboardData.setData('text/html', html); e.clipboardData.setData('text/plain', text); e.preventDefault(); set = true; };
+  document.addEventListener('copy', on, true);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { /* not allowed */ }
+  document.removeEventListener('copy', on, true);
+  return ok && set;
+}
+/** A draft is Markdown, shown and copied formatted the way the Update ticket editor writes it (same tags). */
+const draftHtml = (raw) => dropEmptyParas(rteClean(marked.parse(raw))).trim();
 function draftCard(text) {
+  const raw = text.replace(/^\n+|\s+$/g, '');
   const card = document.createElement('div');
   card.className = 'draft-card';
-  card.innerHTML = `<div class="draft-head"><span>✉️ Draft</span>${copyBtn('Copy draft')}</div><div class="draft-text"></div>`;
-  card.querySelector('.draft-text').textContent = text.replace(/^\n+|\s+$/g, '');
+  card.innerHTML = `<div class="draft-head"><span>✉️ Draft</span>${copyBtn('Copy draft')}</div><div class="draft-text rte-view"></div>`;
+  card.dataset.raw = raw;
+  card.querySelector('.draft-text').innerHTML = draftHtml(raw);
   return card;
 }
 
@@ -2054,6 +2181,7 @@ function md(src) {
     wrap.insertAdjacentHTML('afterbegin', copyBtn());
   }
   for (const table of root.querySelectorAll('table')) {
+    if (table.closest('.draft-card')) continue; // copied as is; the draft text scrolls sideways instead
     const wrap = document.createElement('div');
     wrap.className = 'table-wrap';
     table.replaceWith(wrap);
@@ -2070,10 +2198,11 @@ document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-copy]');
   if (!b) return;
   const box = b.closest('.draft-card, .code-wrap, .msg');
+  const draft = b.dataset.copyText == null && b.dataset.copy !== 'answer' && box.classList.contains('draft-card');
   const text = b.dataset.copyText != null ? b.dataset.copyText : b.dataset.copy === 'answer'
     ? box.dataset.raw || box.querySelector('.body')?.innerText || ''
-    : box.classList.contains('draft-card') ? box.querySelector('.draft-text').textContent : box.querySelector('pre')?.innerText || '';
-  const ok = await copyText(text);
+    : draft ? box.dataset.raw || box.querySelector('.draft-text').innerText : box.querySelector('pre')?.innerText || '';
+  const ok = (draft && copyRich(draftHtml(text), text)) || await copyText(text);
   const label = b.querySelector('span');
   const old = label.textContent;
   label.textContent = ok ? 'Copied' : 'Copy failed';

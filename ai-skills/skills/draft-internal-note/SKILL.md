@@ -8,7 +8,7 @@ mon-category: Tickets & replies
 
 # Internal note
 
-Write an internal note I can paste into Zendesk. Do not post it anywhere. Put the note itself in a ```draft fenced block (plain text, no > quote markers) so I can copy it in one click.
+Write an internal note I can paste into Zendesk. Do not post it anywhere. Put the note itself in a ```draft fenced block, written in Markdown (see Formatting), so I can copy it in one click.
 
 Input: a ticket number and optionally what the note is for, e.g. `/draft-internal-note 25466 handover to @Minh, he's on it tomorrow`. In a ticket chat without a number, use that ticket.
 
@@ -21,9 +21,9 @@ Dataweavers engineers who know our platform well (Azure / Front Door, Cloudflare
 - If the note needs a fact that isn't in the ticket or chat (a rule ID, a resource name, a recent deploy), do a quick targeted read-only check. Don't start a full investigation; if one is needed, say so as the next step.
 - Work out the purpose: **handover** (someone else continues), **escalation / ask for help** (I need someone's input or access), **status / FYI** (record where it stands), or **decision needed**. If I didn't say, infer it from the ticket and say which you chose after the draft.
 
-## 2. Structure (plain text; include a section only when it has something real)
+## 2. Structure (include a section only when it has something real)
 
-Short label lines, then `-` bullets. Start with the one-line point of the note so a skimmer gets it immediately.
+A bold label per section, then `-` bullets (or a small table where it reads better, see Formatting). Start with the one-line point of the note so a skimmer gets it immediately.
 
 - **TL;DR**: one or two lines: the situation and what's needed from whom.
 - **Context**: client, environment (prod / non-prod), affected host / URL / resource, impact, and how long it's been going on. What the customer actually wants (it may differ from what they asked).
@@ -42,6 +42,15 @@ Short label lines, then `-` bullets. Start with the one-line point of the note s
 - No greeting and no sign-off.
 - If something important is unclear, list the open questions for me after the draft instead of guessing.
 
-## 4. After the draft
+## 4. Formatting
+The draft is Markdown that the app shows and copies formatted, exactly as the Update ticket rich editor writes it, so pasting it there keeps the formatting. Use only what that editor has:
+- **Bold** section labels (`**TL;DR:**`), *italic*, `-` and numbered lists (nested with two spaces), `inline code` for identifiers (Ray IDs, rule IDs, resource names, commands).
+- Links with display text, never a bare long URL: `[#25466 Login blocked by WAF](https://support.dataweavers.com/hc/en-us/requests/25466)`, `[PR 1234](https://…)`.
+- Tables for evidence that has several fields per row (events, timings, rule matches, before / after): a header row, at most 5 short columns, one fact per cell. Use bullets instead when there are only one or two fields.
+- Code blocks for KQL, expressions or commands. When the draft contains one, open the draft with four backticks (````draft … ````) so the inner ``` fence doesn't close it.
+- Headings (`###`) only for a long note with clearly separate parts; otherwise bold labels.
+- No HTML tags, no images, no `>` quotes, no horizontal rules.
+
+## 5. After the draft
 One line saying the purpose you chose (handover / escalation / FYI / decision). If posting the note should go with a ticket change (assign, add follower, status), end with this line on its own (the app shows it as a button):
 `Next: /plan-ticket-change <ticket number> post this internal note[, other changes] — <why>`

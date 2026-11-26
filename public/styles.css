@@ -392,7 +392,8 @@ label.f textarea { padding: 7px 9px; border: 1px solid var(--border); border-rad
 .plan-note { font-size: 12px; color: var(--muted); }
 .plan-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .plan-actions .btn[disabled] { opacity: .5; cursor: not-allowed; }
-.draft-text { padding: 12px 14px; white-space: pre-wrap; font-size: 14px; line-height: 1.6; color: var(--text); }
+.draft-text { padding: 12px 14px; font-size: 14px; line-height: 1.6; color: var(--text); overflow-x: auto; overflow-wrap: anywhere; }
+.draft-text > :last-child { margin-bottom: 0; }
 
 /* Copy buttons */
 .copy-btn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); border-radius: 7px; padding: 3px 8px; font-size: 12px; cursor: pointer; }
@@ -658,6 +659,23 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .rte pre, .rte-view pre { font-family: ui-monospace, Consolas, monospace; font-size: 12px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--text) 8%, transparent); white-space: pre-wrap; margin: 6px 0; }
 .rte hr, .rte-view hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
 .rte a, .rte-view a { color: var(--accent); }
+/* Tables (editor, drafts, confirm dialog, posted comments) */
+.rte table, .rte-view table, .comment-html table { border-collapse: collapse; margin: 6px 0; }
+.rte th, .rte td, .rte-view th, .rte-view td, .comment-html th, .comment-html td { border: 1px solid var(--border); padding: 4px 8px; vertical-align: top; text-align: left; min-width: 48px; overflow-wrap: normal; }
+.rte th, .rte-view th, .comment-html th { background: color-mix(in srgb, var(--text) 5%, transparent); font-weight: 600; }
+.comment-body.comment-html table { white-space: normal; }
+.rte-tbl-wrap { position: relative; display: inline-flex; }
+.rte-tbl-pop { position: absolute; top: 30px; left: 0; z-index: 90; padding: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 10px 28px rgba(16,24,40,.18); }
+.rte-tbl-pop[hidden] { display: none; }
+.rte-tbl-grid { display: grid; grid-template-columns: repeat(8, 16px); gap: 3px; }
+.rte-tbl-grid i { width: 16px; height: 16px; border: 1px solid var(--border); border-radius: 3px; cursor: pointer; }
+.rte-tbl-grid i.on { background: var(--accent-soft); border-color: var(--accent); }
+.rte-tbl-size { margin-top: 6px; font-size: 12px; color: var(--muted); text-align: center; white-space: nowrap; }
+.rte-tbl-pop.menu { display: flex; flex-direction: column; min-width: 180px; padding: 4px; }
+.rte-tbl-item { text-align: left; border: none; background: none; color: var(--text); font: inherit; font-size: 12.5px; padding: 5px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.rte-tbl-item:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.rte-tbl-item.danger { color: var(--red); }
+.rte-tbl-pop.menu hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
 .rte .atmention, .rte-view .atmention { background: var(--accent-soft); border-radius: 4px; padding: 0 3px; text-decoration: none; }
 .rte .atmention::before, .rte-view .atmention::before { content: '@'; }
 /* "Make link" chip under a URL typed or pasted as plain text */
