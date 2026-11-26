@@ -1266,8 +1266,9 @@ async function dashboard() {
     <div class="grid two">
       <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2 style="margin:0">Focus queue</h2><div class="seg" id="queueTabs"></div></div><div class="queue" id="queue"></div></div>
       <div class="grid">
-        <div class="card"><h2>Solved, last 7 days</h2><div class="bars" id="bars"></div></div>
-        <div class="card"><h2>By organization</h2><div id="byOrg"></div></div>
+        <div class="card"><h2 id="barsTitle">Solved this week</h2><div class="bars" id="bars"></div></div>
+        <div class="card"><h2>By organization <span class="sub" style="font-weight:400">· this week</span></h2><div id="byOrg"></div></div>
+        <div class="card"><h2>By assignee <span class="sub" style="font-weight:400">· this week</span></h2><div id="byAssignee"></div></div>
       </div>
     </div>`;
   $('#syncBtn').onclick = async (e) => { e.target.disabled = true; try { await api('/api/zendesk/sync', { method: 'POST', body: {} }); toast('Zendesk synced'); } catch (err) { toast(err.message); } e.target.disabled = false; };
@@ -1374,24 +1375,45 @@ async function refreshDashboard() {
     ['Waiting', (s.pending || 0) + (s.hold || 0), `${s.pending || 0} pending (customer) · ${s.hold || 0} on hold`],
   ].map(([l, v, h]) => `<div class="card kpi"><div class="label">${l}</div><div class="value">${v}</div><div class="hint">${esc(h)}</div></div>`).join('');
   drawQueue(tickets, byMe);
-  const days = perf.solvedByDay || [];
+  // This week, Monday to Sunday.
+  const days = (perf.solvedByDay || []).filter((d) => !perf.weekStart || d.date >= perf.weekStart);
+  const todayStr = localDate(new Date());
+  const weekStart = new Date((perf.weekStart || days[0]?.date || todayStr) + 'T00:00');
+  const weekLabel = `${weekStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+  const weekTotal = days.reduce((n, d) => n + (d.solved || 0), 0);
+  $('#barsTitle').innerHTML = `Solved this week <span class="sub" style="font-weight:400">· ${esc(weekLabel)} · ${weekTotal} total</span>`;
   const max = Math.max(1, ...days.map((d) => d.solved || 0));
-  $('#bars').innerHTML = days.length ? days.map((d) => `<div class="bar" title="${d.date}: ${d.solved ?? '?'} solved">
-      <span class="v">${d.solved ?? '–'}</span><div class="fill" style="height:${((d.solved || 0) / max) * 90}px"></div>
+  $('#bars').innerHTML = days.length ? days.map((d) => `<div class="bar${d.date === todayStr ? ' today' : ''}${d.future ? ' future' : ''}" title="${d.date}: ${d.future ? 'later this week' : `${d.solved ?? '?'} solved`}">
+      <span class="v">${d.future ? '' : d.solved ?? '–'}</span><div class="fill" style="height:${((d.solved || 0) / max) * 90}px"></div>
       <span>${new Date(d.date + 'T00:00').toLocaleDateString(undefined, { weekday: 'short' })}</span></div>`).join('')
     : '<div class="sub" style="grid-column:1/-1">No data yet.</div>';
-  // My own tickets per client: open ones, and the ones resolved (solved/closed) in the last 7 days.
+  // My own tickets per client: open ones, and the ones resolved (solved/closed) since Monday.
   const byOrg = {};
   const row = (o) => (byOrg[o] ??= { open: [], resolved: 0 });
   for (const t of tickets.filter(isMine)) row(t.org).open.push(t);
-  const weekAgo = Date.now() - 7 * 864e5;
-  for (const t of allTickets) if (isMine(t) && ['solved', 'closed'].includes(t.status) && new Date(t.updated_at).getTime() >= weekAgo) row(t.org).resolved++;
+  for (const t of allTickets) if (isMine(t) && ['solved', 'closed'].includes(t.status) && new Date(t.updated_at).getTime() >= weekStart.getTime()) row(t.org).resolved++;
   const top = (r) => (r.open.length ? Math.max(...r.open.map((t) => t.score)) : -Infinity);
-  $('#byOrg').innerHTML = Object.keys(byOrg).length ? `<table><tr><th>Org</th><th>Open</th><th>Hot</th><th title="Your tickets solved or closed in the last 7 days">Resolved</th><th>Top score</th></tr>${Object.entries(byOrg)
+  $('#byOrg').innerHTML = Object.keys(byOrg).length ? `<table><tr><th>Org</th><th>Open</th><th>Hot</th><th title="Your tickets solved or closed since Monday">Resolved</th><th>Top score</th></tr>${Object.entries(byOrg)
     .sort((a, b) => top(b[1]) - top(a[1]) || b[1].resolved - a[1].resolved)
     .map(([o, r]) => `<tr><td><a href="#/org/${encodeURIComponent(o)}">${esc(o)}</a></td><td>${r.open.length}</td><td>${r.open.filter((t) => t.score >= 40).length}</td><td>${r.resolved}</td><td>${r.open.length ? Math.round(top(r)) : '–'}</td></tr>`).join('')}</table>
-    <div class="sub" style="margin-top:6px">Resolved: your tickets solved or closed in the last 7 days.</div>`
+    <div class="sub" style="margin-top:6px">Resolved: your tickets solved or closed since Monday.</div>`
     : '<div class="sub">—</div>';
+  drawByAssignee(perf.byAssignee);
+}
+const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Dashboard: agents in my groups this week (from Monday): time logged, open tickets in their queue, resolved. */
+function drawByAssignee(team) {
+  const el = $('#byAssignee');
+  if (!el) return;
+  if (!team?.agents?.length) { el.innerHTML = '<div class="sub">Loads after the next sync.</div>'; return; }
+  const list = [...team.agents].sort((a, b) => b.seconds - a.seconds || (b.resolved || 0) - (a.resolved || 0) || (b.open || 0) - (a.open || 0));
+  const maxSec = Math.max(1, ...list.map((a) => a.seconds));
+  el.innerHTML = `<table class="assignees"><tr><th>Assignee</th><th class="num" title="Time Tracking: time logged since Monday">Time logged</th><th class="num" title="Open tickets in their queue (new, open, pending, on hold)">In queue</th><th class="num" title="Tickets assigned to them, solved since Monday">Resolved</th></tr>${list.map((a) => `<tr class="${a.me ? 'me' : ''}">
+      <td>${esc(a.name)}${a.me ? ' <span class="sub">(you)</span>' : ''}</td>
+      <td class="num">${a.seconds ? fmtDuration(a.seconds) : '–'}<div class="logbar" style="width:${(a.seconds / maxSec) * 100}%;${a.seconds ? '' : 'visibility:hidden'}"></div></td>
+      <td class="num">${a.open ?? '–'}</td><td class="num">${a.resolved ?? '–'}</td></tr>`).join('')}</table>
+    <div class="sub" style="margin-top:6px">Agents in your groups, since Monday${team.timeTracked ? '' : ' (Time Tracking fields not found, so no time logged)'} · updated ${ago(team.checkedAt)}, every 10 min.</div>`;
 }
 
 // ---------- static data cache (client settings, Cloudflare zones, repos) ----------
@@ -1423,7 +1445,7 @@ function clientPanelHtml(org, info, { compact = false } = {}) {
   const { profile: p, zones, repos } = info;
   const st = azStatus?.profiles?.find((x) => x.org === p?.org);
   const azure = p
-    ? `<div class="row" style="margin-bottom:8px"><span data-status-org="${esc(p.org)}">${signInPills(st)}</span>${p.vpn?.required ? '<span class="pill vpn">🔒 VPN</span>' : ''}</div>
+    ? `${p.vpn?.required ? '<div class="row" style="margin-bottom:8px"><span class="pill vpn">🔒 VPN</span></div>' : ''}
        ${p.tenantId ? `<div class="signin-row" data-signin-row="${esc(p.org)}" data-env="${defaultEnv(p)}" data-vpn="${p.vpn?.required ? 'Dataweavers OpenVPN' : ''}">${signinButtons({ org: p.org, env: defaultEnv(p), vpn: p.vpn?.required ? 'Dataweavers OpenVPN' : '' }, st)}</div>` : ''}
        ${compact ? '' : `<div class="az-subs" style="margin-bottom:8px"><span><b>Prod</b> ${esc(p.subscriptionNames?.prod || p.subscriptions?.prod || '—')}</span><span><b>NonProd</b> ${esc(p.subscriptionNames?.nonprod || p.subscriptions?.nonprod || '—')}</span></div>`}
        ${azureActions(p)}`
