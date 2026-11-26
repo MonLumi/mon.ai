@@ -850,6 +850,14 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .cu-kpis div { display: flex; flex-direction: column; align-items: flex-start; }
 .cu-kpis b { font-size: 15px; font-variant-numeric: tabular-nums; }
 .cu-kpis span { font-size: 11px; color: var(--muted); }
+.cu-ctx { margin: 0 0 8px; font-size: 12.5px; }
+.cu-ctx-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+.cu-ctx-head > span:first-child { color: var(--muted); }
+.cu-ctx-bar { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.cu-ctx-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.cu-ctx.mid .cu-ctx-bar i { background: var(--amber); }
+.cu-ctx.hi .cu-ctx-bar i { background: var(--red); }
+.cu-ctx.hi .cu-ctx-head b:last-child { color: var(--red); }
 .cu-sec { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 10px 0 2px; }
 .cu-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 3px 0; border-top: 1px solid var(--border); }
 .cu-row:first-of-type { border-top: none; }

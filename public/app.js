@@ -3988,7 +3988,16 @@ async function loadChatUsage(sid) {
   fillCostChip(u);
   const dots = (models) => (models || []).filter((f) => f !== 'other').map((f) => `<i class="sw m-${f}" title="${famLabel(f)}"></i>`).join('');
   el.hidden = false;
-  el.innerHTML = `<h2>This chat <a class="sub" href="#/usage" style="float:right;font-weight:400">Usage →</a></h2>
+  // Context size: how full the model's context window is after the last reply (what compaction acts on).
+  const c = u.context;
+  const ctxHtml = c ? (() => {
+    const pct = Math.min(100, Math.round(c.pct * 100));
+    const level = pct >= 80 ? 'hi' : pct >= 60 ? 'mid' : '';
+    return `<div class="cu-ctx ${level}" title="Tokens the next turn sends: the last reply's prompt, cache and output (${c.tokens.toLocaleString()} of ${c.window.toLocaleString()}${c.estimatedWindow ? ', window size estimated' : ''})">
+      <div class="cu-ctx-head"><span>Context</span><span><b>${fmtTok(c.tokens)}</b> / ${fmtTok(c.window)} · <b>${pct}%</b></span></div>
+      <div class="cu-ctx-bar"><i style="width:${pct}%"></i></div></div>`;
+  })() : '';
+  el.innerHTML = `<h2>This chat <a class="sub" href="#/usage" style="float:right;font-weight:400">Usage →</a></h2>${ctxHtml}
     ${t.calls ? `<div class="cu-kpis"><div><b>${fmtCost(t.cost)}</b><span>cost</span></div><div><b>${t.turns}</b><span>runs</span></div><div><b>${fmtTok(t.tokens)}</b><span>tokens</span></div><div><b>${t.cacheHit == null ? '–' : `${Math.round(t.cacheHit * 100)}%`}</b><span>cache</span></div></div>
     <div class="cu-sec">Models</div>${u.byModel.map((m) => `<div class="cu-row"><span><i class="sw m-${famOf(m.label)}"></i> ${esc(m.label.replace(/^claude-/, ''))}</span><span>${fmtTok(m.tokens)} · <b>${fmtCost(m.cost)}</b></span></div>`).join('')}
     <div class="cu-sec">Skills</div>${u.bySkill.map((k) => `<div class="cu-row"><span>${k.key ? `<a href="#/skills/${encodeURIComponent(k.key)}">${esc(k.label)}</a>` : '<span class="sub">No skill</span>'} <span class="sub">×${k.turns}</span></span><span><b>${fmtCost(k.cost)}</b></span></div>`).join('')}
