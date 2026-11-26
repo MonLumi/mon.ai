@@ -1499,9 +1499,9 @@ function clientPanelHtml(org, info, { compact = false } = {}) {
     <div class="card"><h2>Repositories</h2>${repoList}</div>`;
 }
 
-/** Client column: name, open tickets (the current one highlighted), Azure, Cloudflare, repositories. */
+/** Client panel: client chip (links to the client), open tickets (the current one highlighted), Azure, Cloudflare, repositories. */
 function clientSideHtml(org, info, tickets, current) {
-  return `<div class="side-title">${clientBadge(org)}<a href="#/org/${encodeURIComponent(org)}">${esc(org)}</a></div>
+  return `<div class="side-title">${clientBadge(org)}</div>
     <div class="card"><h2>Open tickets</h2>${tickets.length ? tickets.slice(0, 8).map((t) => `<div class="side-ticket ${Number(current) === t.id ? 'current' : ''}"><a class="link" href="#/ticket/${t.id}">#${t.id}</a> <span class="status-pill st-${esc(t.status)}">${esc(statusOf(t).label)}</span><div class="sub">${esc(t.subject)}</div></div>`).join('') : '<div class="sub">None open.</div>'}</div>
     ${clientPanelHtml(org, info, { compact: true })}`;
 }
