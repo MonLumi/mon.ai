@@ -1096,8 +1096,8 @@ const onTicketAction = async (e) => {
     const upvoted = uv.dataset.on === '1';
     uv.disabled = true;
     try {
-      await api(`/api/tickets/${uv.dataset.upvote}/upvote`, { method: 'POST', body: { upvoted } });
-      toast(upvoted ? `#${uv.dataset.upvote} upvoted — score increased` : `#${uv.dataset.upvote} upvote removed`);
+      const r = await api(`/api/tickets/${uv.dataset.upvote}/upvote`, { method: 'POST', body: { upvoted } });
+      toast(upvoted ? `#${uv.dataset.upvote} upvoted — score increased${r?.warmed ? ', cooldown ended' : ''}` : `#${uv.dataset.upvote} upvote removed`);
       refreshDashboard().catch(() => {});
       if (state.route.name === 'org') refreshOrgLive(state.route.id);
     } catch (err) {
@@ -1109,8 +1109,8 @@ const onTicketAction = async (e) => {
   const ig = e.target.closest('[data-ignore]');
   if (ig) {
     try {
-      await api(`/api/tickets/${ig.dataset.ignore}/ignore`, { method: 'POST', body: { ignore: ig.dataset.on === '1' } });
-      toast(ig.dataset.on === '1' ? `#${ig.dataset.ignore} cooling down` : `#${ig.dataset.ignore} back in Open`);
+      const r = await api(`/api/tickets/${ig.dataset.ignore}/ignore`, { method: 'POST', body: { ignore: ig.dataset.on === '1' } });
+      toast(ig.dataset.on === '1' ? `#${ig.dataset.ignore} cooling down${r?.unvoted ? ', upvote removed' : ''}` : `#${ig.dataset.ignore} back in Open`);
       refreshDashboard().catch(() => {});
       if (state.route.name === 'org') refreshOrgLive(state.route.id);
     } catch (err) { toast(err.message); }
@@ -3291,14 +3291,14 @@ async function chatPage(id, opts = {}) {
   wireMenu(menuBtn, $('#chatMenu'), async (act) => {
     try {
       if (act === 'upvote' && s.ticket_id) {
-        await api(`/api/tickets/${s.ticket_id}/upvote`, { method: 'POST', body: { upvoted: !s.ticket_upvoted } });
-        toast(s.ticket_upvoted ? `#${s.ticket_id} upvote removed` : `#${s.ticket_id} upvoted — score increased`);
+        const r = await api(`/api/tickets/${s.ticket_id}/upvote`, { method: 'POST', body: { upvoted: !s.ticket_upvoted } });
+        toast(s.ticket_upvoted ? `#${s.ticket_id} upvote removed` : `#${s.ticket_id} upvoted — score increased${r?.warmed ? ', cooldown ended' : ''}`);
         chatPage(id, opts);
       } else if (act === 'cooldown') {
         const on = !chatCooled(s);
         if (!on) forgetCooldown(id);
-        await api(`/api/sessions/${id}/cooldown`, { method: 'POST', body: { on } });
-        toast(on ? `Cooled down${s.ticket_id ? `: back when someone else updates #${s.ticket_id}` : ''}` : 'Cooldown ended');
+        const r = await api(`/api/sessions/${id}/cooldown`, { method: 'POST', body: { on } });
+        toast(on ? `Cooled down${s.ticket_id ? `: back when someone else updates #${s.ticket_id}` : ''}${r?.unvoted ? ' (upvote removed)' : ''}` : 'Cooldown ended');
         chatPage(id, opts);
       } else if (act === 'skill') {
         menuBtn.disabled = true; menuBtn.textContent = 'Drafting skill…';
@@ -3685,12 +3685,12 @@ async function drawNoChatHead(tid) {
   wireMenu($('#chatMenuBtn'), $('#chatMenu'), async (act) => {
     try {
       if (act === 'upvote') {
-        await api(`/api/tickets/${tid}/upvote`, { method: 'POST', body: { upvoted: !upvoted } });
-        toast(upvoted ? `#${tid} upvote removed` : `#${tid} upvoted — score increased`);
+        const r = await api(`/api/tickets/${tid}/upvote`, { method: 'POST', body: { upvoted: !upvoted } });
+        toast(upvoted ? `#${tid} upvote removed` : `#${tid} upvoted — score increased${r?.warmed ? ', cooldown ended' : ''}`);
         drawNoChatHead(tid);
       } else if (act === 'cooldown') {
-        await api(`/api/tickets/${tid}/ignore`, { method: 'POST', body: { ignore: !cooled } });
-        toast(cooled ? `#${tid} back in Open` : `#${tid} cooling down: back when someone else updates it`);
+        const r = await api(`/api/tickets/${tid}/ignore`, { method: 'POST', body: { ignore: !cooled } });
+        toast(cooled ? `#${tid} back in Open` : `#${tid} cooling down: back when someone else updates it${r?.unvoted ? ' (upvote removed)' : ''}`);
         drawNoChatHead(tid);
       }
     } catch (err) { toast(err.message); }

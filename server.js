@@ -140,18 +140,7 @@ app.post('/api/tickets/:id/update', wrap((req) => {
 // An image pasted into the Zendesk panel's editor goes to Zendesk's Uploads API; Submit attaches it by its token.
 app.post('/api/zendesk/uploads', express.raw({ type: 'application/octet-stream', limit: '20mb' }), wrap((req) => zendesk.uploadFile(String(req.query.name || 'image.png'), String(req.query.type || ''), req.body)));
 app.post('/api/tickets/:id/ignore', wrap((req) => zendesk.setIgnored(Number(req.params.id), !!req.body.ignore)));
-app.post('/api/tickets/:id/upvote', wrap((req) => {
-  const id = Number(req.params.id);
-  const upvoted = req.body.upvoted === true ? 1 : 0;
-  const at = upvoted ? new Date().toISOString() : null;
-  db.prepare('UPDATE tickets SET upvoted = ?, upvoted_at = ? WHERE id = ?').run(upvoted, at, id);
-  const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id);
-  if (!ticket) throw new Error(`Ticket #${id} not found`);
-  const { score, reasons } = zendesk.scoreTicket(ticket);
-  db.prepare('UPDATE tickets SET score = ?, reasons = ? WHERE id = ?').run(score, JSON.stringify(reasons), id);
-  bus.emit('event', { type: 'tickets:updated', data: { id } });
-  return { id, upvoted: !!upvoted, score };
-}));
+app.post('/api/tickets/:id/upvote', wrap((req) => zendesk.setUpvote(Number(req.params.id), req.body.upvoted === true)));
 app.get('/api/zendesk/directory', wrap(() => zendesk.directory()));
 app.get('/api/zendesk/users', wrap((req) => zendesk.searchUsers(req.query.q)));
 app.get('/api/zendesk/macros', wrap((req) => zendesk.macros({ fresh: req.query.fresh === '1' })));
