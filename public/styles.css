@@ -660,6 +660,22 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .rte a, .rte-view a { color: var(--accent); }
 .rte .atmention, .rte-view .atmention { background: var(--accent-soft); border-radius: 4px; padding: 0 3px; text-decoration: none; }
 .rte .atmention::before, .rte-view .atmention::before { content: '@'; }
+/* "Make link" chip under a URL typed or pasted as plain text */
+.rte-suggest { position: fixed; z-index: 95; display: inline-flex; align-items: center; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 22px rgba(16,24,40,.18); font-size: 12px; animation: md-fade .1s ease-out; }
+.rte-suggest button { display: inline-flex; align-items: center; gap: 5px; border: none; background: none; color: var(--text); font: inherit; cursor: pointer; padding: 3px 7px; border-radius: 6px; }
+.rte-suggest button:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.rte-suggest-go { color: var(--accent) !important; font-weight: 600 !important; }
+.rte-suggest kbd { font: 10.5px var(--mono, ui-monospace, Consolas, monospace); color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-weight: 400; }
+.rte-suggest-x { color: var(--muted) !important; font-size: 14px !important; line-height: 1; }
+/* Insert / edit link dialog */
+.link-modal { width: min(460px, 100%); }
+.lk-field { display: grid; gap: 4px; margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
+.lk-field input { font: inherit; font-size: 13.5px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; outline: none; }
+.lk-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.lk-err { margin-top: 8px; font-size: 12.5px; color: var(--red); }
+.lk-err[hidden] { display: none; }
+.link-modal .modal-actions { margin-top: 16px; }
+.link-modal .lk-remove { min-width: 0; color: var(--red); }
 .modal-note.rte-view { white-space: normal; max-height: 220px; background: var(--panel-2); }
 
 /* Zendesk panel: time tracking */

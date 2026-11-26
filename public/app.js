@@ -358,6 +358,65 @@ function rteHtml(ed, { preview = false } = {}) {
   })).trim();
 }
 const RTE_IMG = /^image\/(png|jpeg|gif|webp|bmp)$/;
+// URLs written as plain text: http(s)://… or www.…, without trailing punctuation such as the full stop of a sentence.
+const RTE_URL = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi;
+const RTE_URL_ONLY = /^(?:https?:\/\/|www\.|mailto:)\S+$/i;
+const rteTrimUrl = (u) => { let s = u.replace(/[.,;:!?'"]+$/, ''); while (/[)\]}]$/.test(s) && (s.split(/[([{]/).length < s.split(/[)\]}]/).length)) s = s.slice(0, -1).replace(/[.,;:!?'"]+$/, ''); return s; };
+const rteHref = (u) => (/^www\./i.test(u) ? `https://${u}` : u);
+/** Plain-text URLs in the editor (not already in a link, code or code block): [{ node, start, end, url }]. */
+function rteBareUrls(ed) {
+  const out = [];
+  const walk = document.createTreeWalker(ed, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement?.closest('a, code, pre, .atmention') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    for (const m of n.data.matchAll(RTE_URL)) {
+      const url = rteTrimUrl(m[0]);
+      if (url.length > 8) out.push({ node: n, start: m.index, end: m.index + url.length, url });
+    }
+  }
+  return out;
+}
+/**
+ * Insert / edit link dialog (instead of the browser's prompt): the link address and the text shown.
+ * Resolves { url, text } to set the link, { remove: true } to remove it, or null when cancelled.
+ */
+function linkDialog({ url = '', text = '', editing = false } = {}) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-wrap';
+    wrap.innerHTML = `<form class="modal link-modal" role="dialog" aria-modal="true" aria-labelledby="lkTitle" novalidate>
+      <h2 id="lkTitle">${editing ? 'Edit link' : 'Insert link'}</h2>
+      <label class="lk-field"><span>Link</span><input name="url" type="text" autocomplete="off" spellcheck="false" placeholder="https://… or mailto:…" value="${esc(url)}"></label>
+      <label class="lk-field"><span>Display text</span><input name="text" type="text" autocomplete="off" placeholder="Shown instead of the address (optional)" value="${esc(text)}"></label>
+      <div class="lk-err" hidden></div>
+      <div class="modal-actions">${editing ? '<button type="button" class="btn lk-remove" data-lk="remove">Remove link</button><span style="flex:1"></span>' : ''}<button type="button" class="btn" data-lk="cancel">Cancel</button><button type="submit" class="btn primary">${editing ? 'Save' : 'Insert'}</button></div>
+    </form>`;
+    const form = wrap.querySelector('form');
+    const [uIn, tIn] = [form.querySelector('[name="url"]'), form.querySelector('[name="text"]')];
+    const err = wrap.querySelector('.lk-err');
+    const done = (v) => { document.removeEventListener('keydown', key, true); wrap.remove(); resolve(v); };
+    const key = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+    wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) done(null); });
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-lk]');
+      if (b) done(b.dataset.lk === 'remove' ? { remove: true } : null);
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      let u = uIn.value.trim();
+      if (!u) { err.textContent = 'Enter the link address.'; err.hidden = false; uIn.focus(); return; }
+      if (/^www\./i.test(u)) u = `https://${u}`;
+      else if (/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(u)) u = `mailto:${u}`;
+      else if (!/^(https?:\/\/|mailto:)/i.test(u) && /^[\w-]+(\.[\w-]+)+([/?#].*)?$/.test(u)) u = `https://${u}`;
+      if (!/^(https?:\/\/\S+|mailto:\S+)$/i.test(u)) { err.textContent = 'Links must start with https://, http:// or mailto:'; err.hidden = false; uIn.focus(); return; }
+      done({ url: u, text: tIn.value.trim() });
+    });
+    uIn.addEventListener('input', () => { err.hidden = true; });
+    document.addEventListener('keydown', key, true);
+    document.body.append(wrap);
+    (url ? tIn : uIn).focus();
+    (url ? tIn : uIn).select();
+  });
+}
 /** Wire a toolbar made by rteToolbar() to a contenteditable editor. `onChange` runs after edits. `images`: paste/drop images (uploaded to Zendesk). */
 function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
   let saved = null; // the editor's selection, kept while you use the toolbar
@@ -376,15 +435,80 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
     const h = ['H1', 'H2', 'H3', 'H4'].find((x) => inBlock(x));
     bar.querySelector('.rte-block').value = h ? h.toLowerCase() : 'p';
   };
-  const link = () => {
+  const link = async () => {
     keep();
+    hideSuggest();
     const cur = inBlock('A');
-    const url = prompt('Link address (https://…, or mailto:)', cur?.getAttribute('href') || 'https://');
-    if (url === null) return restore();
-    if (!url.trim() || url.trim() === 'https://') return exec('unlink');
-    if (!/^(https?:\/\/|mailto:)/i.test(url.trim())) { toast('Links must start with https://, http:// or mailto:'); return restore(); }
-    if (saved && saved.collapsed && !cur) { restore(); document.execCommand('insertHTML', false, `<a href="${esc(url.trim())}">${esc(url.trim())}</a>&nbsp;`); keep(); onChange(); return; }
-    exec('createLink', url.trim());
+    const selText = cur ? cur.textContent : (saved ? saved.toString() : '');
+    const selIsUrl = !cur && RTE_URL_ONLY.test(selText.trim());
+    const r = await linkDialog({
+      url: cur ? cur.getAttribute('href') || '' : selIsUrl ? rteHref(selText.trim()) : '',
+      text: selIsUrl ? '' : selText,
+      editing: !!cur,
+    });
+    restore();
+    if (!r) return;
+    if (r.remove) { if (cur) { cur.replaceWith(...cur.childNodes); onChange(); refresh(); } return; }
+    const text = r.text || r.url;
+    if (cur) {
+      cur.setAttribute('href', r.url);
+      if (text !== cur.textContent) cur.textContent = text;
+    } else {
+      document.execCommand('insertHTML', false, `<a href="${esc(r.url)}">${esc(text)}</a>${saved && saved.collapsed ? '&nbsp;' : ''}`);
+    }
+    keep(); onChange(); refresh();
+  };
+  // Bare URLs typed or pasted as text: a small chip under the URL offers to turn them into links.
+  // Only the URL you just finished (or the ones you just pasted) are offered, not every old one in the text.
+  const dismissed = new Set();
+  let chip = null, offered = null; // offered: which bare URLs the chip stands for
+  let justTyped = null; // { node, url } of a URL the caret sat right after when you pressed Space / Enter
+  const hideSuggest = () => { chip?.remove(); chip = null; offered = null; };
+  const pick = (only) => rteBareUrls(ed).filter((u) => !dismissed.has(u.url) && (!only || only(u)));
+  const suggest = (only = null) => {
+    hideSuggest();
+    if (!bar.isConnected) return;
+    const found = pick(only);
+    if (!found.length) return;
+    offered = only;
+    const last = found[found.length - 1];
+    const rg = document.createRange();
+    rg.setStart(last.node, last.start); rg.setEnd(last.node, last.end);
+    const rect = [...rg.getClientRects()].pop() || rg.getBoundingClientRect();
+    chip = document.createElement('div');
+    chip.className = 'rte-suggest';
+    chip.innerHTML = `<button type="button" class="rte-suggest-go" title="Turn into a clickable link (Tab)">${ICON('M10.6 13.4a1 1 0 0 1 0-1.4l3.5-3.5a1 1 0 1 1 1.4 1.4L12 13.4a1 1 0 0 1-1.4 0zM8.5 19a4.5 4.5 0 0 1-3.2-7.7l2-2 1.4 1.4-2 2a2.5 2.5 0 0 0 3.6 3.6l2-2 1.4 1.4-2 2A4.5 4.5 0 0 1 8.5 19zm8.2-6.3-1.4-1.4 2-2a2.5 2.5 0 0 0-3.6-3.6l-2 2-1.4-1.4 2-2a4.5 4.5 0 0 1 6.4 6.4z')} ${found.length > 1 ? `Make ${found.length} links` : 'Make link'} <kbd>Tab</kbd></button><button type="button" class="rte-suggest-x" title="Keep as plain text (Esc)">×</button>`;
+    chip.addEventListener('mousedown', (e) => e.preventDefault()); // keep the caret in the editor
+    chip.querySelector('.rte-suggest-go').addEventListener('click', () => applySuggest());
+    chip.querySelector('.rte-suggest-x').addEventListener('click', () => { found.forEach((u) => dismissed.add(u.url)); hideSuggest(); });
+    document.body.append(chip);
+    const w = chip.offsetWidth;
+    chip.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - w - 8))}px`;
+    chip.style.top = `${rect.bottom + 4 + chip.offsetHeight > innerHeight ? rect.top - chip.offsetHeight - 4 : rect.bottom + 4}px`;
+  };
+  const applySuggest = () => {
+    const found = pick(offered);
+    hideSuggest();
+    if (!found.length) return;
+    const s = getSelection();
+    const caret = s.rangeCount ? s.getRangeAt(0) : null;
+    const caretNode = caret?.startContainer, caretOff = caret?.startOffset;
+    let back = null; // where the caret goes back to, when it sat in a text node that gets split
+    for (const u of found.reverse()) { // last first, so earlier offsets in the same text node stay valid
+      const rg = document.createRange();
+      rg.setStart(u.node, u.start); rg.setEnd(u.node, u.end);
+      const a = document.createElement('a');
+      a.href = rteHref(u.url);
+      rg.surroundContents(a);
+      if (!back && caretNode === u.node && caretOff >= u.end) {
+        const t = a.nextSibling;
+        back = t?.nodeType === 3 ? [t, Math.min(caretOff - u.end, t.length)] : null;
+        if (!back) { const r = document.createRange(); r.setStartAfter(a); back = [r.startContainer, r.startOffset]; }
+      }
+    }
+    ed.focus();
+    if (back) { const r = document.createRange(); r.setStart(...back); r.collapse(true); s.removeAllRanges(); s.addRange(r); }
+    keep(); onChange(); refresh();
   };
   const colors = bar.querySelector('.rte-colors');
   bar.addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); }); // keep the editor's selection
@@ -410,10 +534,27 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
     exec(cmd);
   });
   bar.querySelector('.rte-block').addEventListener('change', (e) => exec('formatBlock', e.target.value));
-  ed.addEventListener('keyup', () => { keep(); refresh(); });
+  ed.addEventListener('keyup', (e) => {
+    keep(); refresh();
+    if (justTyped && (e.key === ' ' || e.key === 'Enter')) { const j = justTyped; justTyped = null; suggest((u) => u.node === j.node && u.url === j.url); }
+    else if (chip && !['Shift', 'Control', 'Alt', 'Meta', 'Tab', 'Escape'].includes(e.key)) hideSuggest();
+  });
   ed.addEventListener('mouseup', () => { keep(); refresh(); });
   ed.addEventListener('focus', refresh);
+  ed.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== ed) hideSuggest(); }, 0));
+  ed.addEventListener('scroll', hideSuggest);
   ed.addEventListener('keydown', (e) => {
+    if (chip && e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); e.stopPropagation(); applySuggest(); return; }
+    if (chip && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); pick(offered).forEach((u) => dismissed.add(u.url)); hideSuggest(); return; }
+    if ((e.key === ' ' || e.key === 'Enter') && !e.ctrlKey && !e.metaKey) { // remember a URL that ends right at the caret
+      const s = getSelection();
+      const n = s.anchorNode, off = s.anchorOffset;
+      justTyped = null;
+      if (s.isCollapsed && n?.nodeType === 3) {
+        const u = rteBareUrls(ed).find((x) => x.node === n && x.end <= off && /^[.,;:!?'")\]}]*$/.test(n.data.slice(x.end, off)));
+        if (u) justTyped = { node: n, url: u.url };
+      }
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); link(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'u') { e.preventDefault(); exec('underline'); }
   });
@@ -465,9 +606,11 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
       document.execCommand('insertHTML', false, tmp.innerHTML);
     } else document.execCommand('insertText', false, text);
     onChange();
+    const pasted = text || '';
+    if (pasted) suggest((u) => pasted.includes(u.url));
   });
   const track = () => {
-    if (!bar.isConnected) { document.removeEventListener('selectionchange', track); return; }
+    if (!bar.isConnected) { document.removeEventListener('selectionchange', track); hideSuggest(); return; }
     if (document.activeElement === ed) keep();
   };
   document.addEventListener('selectionchange', track);
