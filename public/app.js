@@ -2295,6 +2295,15 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+/** Divider where the conversation was compacted: the older part above it was replaced by a summary (expandable). */
+function compactHtml(c, pending = false) {
+  if (pending) return '<div class="msg-compact pending"><span>🗜 Compacting the conversation…</span></div>';
+  const tok = c.preTokens ? ` · ${fmtTok(c.preTokens)} → ${fmtTok(c.postTokens)} tokens` : '';
+  return `<div class="msg-compact"><details><summary>🗜 Conversation compacted${c.trigger === 'auto' ? ' automatically' : ''}${tok}</summary>
+    <div class="sub">From here on the assistant works from this summary instead of the full history above.</div>
+    ${c.summary ? `<div class="md">${md(c.summary)}</div>` : '<div class="sub">No summary was saved.</div>'}</details></div>`;
+}
+
 function assistantHtml(c, models, running = false) {
   const { body, next } = running ? { body: c.text, next: [] } : splitNext(c.text);
   return `${workLog(c, running)}
@@ -2462,6 +2471,7 @@ async function chatPage(id, opts = {}) {
             ${s.ticket_id ? `<button role="menuitem" data-act="upvote" title="${s.ticket_upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${s.ticket_upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>` : ''}
             <button role="menuitem" data-act="cooldown" title="${chatCooled(s) ? 'Bring this chat back to normal' : `Dim it in the sidebar and stop offering Zendesk refreshes${s.ticket_id ? ' until someone else updates the ticket' : ''}. Sending a message ends it.`}">${chatCooled(s) ? '☀ End cooldown' : '❄ Cooldown'}</button>
             <button role="menuitem" data-act="skill" title="Turn what this chat did into a reusable skill (you review it before saving)">＋ Create skill from chat</button>
+            ${s.claude_session_id && !s.reference_only ? '<button role="menuitem" data-act="compact" title="Replace the older part of this conversation with a summary, so each new message re-reads less. Claude Code also does this on its own when the context fills up.">🗜 Compact conversation</button>' : ''}
             <hr>
             ${s.archived_at ? `${s.reference_only ? '' : '<button role="menuitem" data-act="restore" title="Move back to active chats">↩ Restore</button>'}
             <button role="menuitem" data-act="forever" class="danger" title="Delete permanently (not kept as a reference)">🗑 Delete forever</button>`
@@ -2471,6 +2481,7 @@ async function chatPage(id, opts = {}) {
     <div class="zd-banner" id="zdBanner" hidden></div>
     <div class="msgs" id="msgs"><div class="msgs-inner">${s.messages.map((m) => m.role === 'user'
       ? userMsgHtml(m.content, m.id)
+      : m.role === 'compact' ? compactHtml(m.content)
       : `<div class="msg assistant" data-raw="${esc(m.content.text || '')}">${assistantHtml(m.content, models)}</div>`).join('')
       || `<div class="empty">Ask about your tickets, Azure resources, Cloudflare zones or code. Try “What should I work on first?” or type / for skills. You can attach or paste images and files.</div>`}</div></div>
     <form class="composer" id="composer"${s.reference_only ? ' style="display:none"' : ''}>
@@ -2541,6 +2552,16 @@ async function chatPage(id, opts = {}) {
         menuBtn.disabled = true; menuBtn.textContent = 'Drafting skill…';
         pendingSkillDraft = await api(`/api/sessions/${id}/skill-draft`, { method: 'POST', body: {} });
         location.hash = '#/skills/new';
+      } else if (act === 'compact') {
+        if (busy) { toast('Wait for the current reply to finish'); return; }
+        busy = true;
+        menuBtn.disabled = true; $('#sendBtn').disabled = true;
+        inner.insertAdjacentHTML('beforeend', compactHtml(null, true));
+        msgs.scrollTop = msgs.scrollHeight;
+        try {
+          const c = await api(`/api/sessions/${id}/compact`, { method: 'POST', body: {} });
+          toast(c.preTokens ? `Compacted: ${fmtTok(c.preTokens)} → ${fmtTok(c.postTokens)} tokens` : 'Conversation compacted');
+        } finally { busy = false; chatPage(id, opts); } // redraw either way (divider on success, back to normal on error)
       } else if (act === 'restore') {
         await api(`/api/sessions/${id}/unarchive`, { method: 'POST', body: {} });
         toast('Chat restored');
@@ -2787,6 +2808,11 @@ async function chatPage(id, opts = {}) {
           else if (type === 'pull') live.pulls = [...live.pulls.filter((x) => x.path !== data.path), data];
           else if (type === 'tool_result') Object.assign(live.tools.find((x) => x.id === data.id) || {}, data);
           else if (type === 'model') { live.model = data.model; live.effort = data.effort; live.skill = data.skill; }
+          else if (type === 'compacting') { if (!inner.querySelector('.msg-compact.pending')) box.insertAdjacentHTML('beforebegin', compactHtml(null, true)); }
+          else if (type === 'compacted') {
+            const ph = inner.querySelector('.msg-compact.pending');
+            if (ph) ph.outerHTML = compactHtml(data); else box.insertAdjacentHTML('beforebegin', compactHtml(data));
+          }
           else if (type === 'error') live.errors.push(`<div class="notice err" style="margin-top:8px">${esc(data.message)}${/auth|login/i.test(data.message) ? ' · <a href="#/settings/claude">Sign in to Claude</a>' : ''}</div>`);
           schedule();
         }

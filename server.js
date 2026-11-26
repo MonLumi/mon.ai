@@ -275,6 +275,7 @@ app.get('/api/uploads/:sid/:file', (req, res) => {
   } catch { res.status(404).end(); }
 });
 
+app.post('/api/sessions/:id/compact', wrap((req) => assistant.compact(req.params.id)));
 app.post('/api/sessions/:id/skill-draft', wrap((req) => assistant.draftSkillFromChat(req.params.id)));
 app.post('/api/sessions/:id/messages', async (req, res) => {
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });

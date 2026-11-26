@@ -132,6 +132,18 @@ td.mono, .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywh
 .msg.user { align-self: flex-end; background: var(--accent); color: #fff; padding: 9px 14px; border-radius: 14px 14px 4px 14px; max-width: 75%; white-space: pre-wrap; }
 .msg.assistant { background: var(--panel); border: 1px solid var(--border); padding: 12px 16px; border-radius: 4px 14px 14px 14px; }
 .msg.assistant p { margin: 0 0 8px; } .msg.assistant p:last-child { margin: 0; }
+/* where the conversation was compacted: a divider line, with the summary folded inside */
+.msg-compact { align-self: stretch; font-size: 12.5px; color: var(--muted); }
+.msg-compact > span, .msg-compact summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.msg-compact > span { cursor: default; }
+.msg-compact summary::-webkit-details-marker { display: none; }
+.msg-compact > span::before, .msg-compact > span::after, .msg-compact summary::before, .msg-compact summary::after { content: ''; flex: 1; border-top: 1px dashed var(--border); }
+.msg-compact summary:hover { color: var(--text); }
+.msg-compact.pending > span { animation: compact-pulse 1.4s ease-in-out infinite; }
+@keyframes compact-pulse { 50% { opacity: .45; } }
+.msg-compact details > .sub { margin: 8px 0 6px; }
+.msg-compact .md { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; color: var(--text); max-height: 50vh; overflow: auto; }
+.msg-compact .md p { margin: 0 0 6px; }
 .msg.assistant pre { background: var(--panel-2); padding: 10px; border-radius: 8px; overflow-x: auto; font-family: var(--mono); font-size: 12px; }
 .msg.assistant code { font-family: var(--mono); font-size: 12px; background: var(--panel-2); padding: 1px 4px; border-radius: 4px; }
 .msg.assistant pre code { background: none; padding: 0; }
