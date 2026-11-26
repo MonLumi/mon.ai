@@ -3197,14 +3197,14 @@ async function clientSettings() {
     const customSignIn = !!((p.edgeProfile && p.edgeProfile !== 'Default') || p.account);
     return `<div class="card profile-card client-card ${p.vpn?.required ? 'needs-vpn' : ''}">
       <div class="profile-top">
-        <input class="client-code" name="org" value="${esc(cl.code)}" placeholder="Client code, e.g. ACU" required>
+        <input class="client-code" name="org" value="${esc(cl.code)}" data-orig="${esc(cl.code)}" placeholder="Client name" required>
         <label class="check" title="Connect Dataweavers OpenVPN before signing in to this client's Azure"><input type="checkbox" name="vpnRequired" ${p.vpn?.required ? 'checked' : ''}> VPN required</label>
         <label class="check" title="Use a specific Edge profile or login account for this client instead of the defaults (Default profile, ${esc(defaultAccount)})"><input type="checkbox" name="customSignIn" ${customSignIn ? 'checked' : ''}> Custom sign-in</label>
         <label class="check" title="Show the ADO project and ADO tenant fields"><input type="checkbox" name="adoAdvanced" ${adoAdv ? 'checked' : ''}> More ADO options</label>
         <button type="button" class="btn small danger" data-remove>Remove</button>
       </div>
-      <label class="f">Also known as: Zendesk organization or repo folder names that belong to this client (comma separated)
-        <input name="aliases" value="${esc(cl.aliases.join(', '))}" placeholder="e.g. ACU (Australian Catholic University), Australian Catholic University"></label>
+      <label class="f">Aliases <span class="sub">Other names for this client, comma separated: its Zendesk organization name, repo folder name or a short code. Tickets, chats and repos under any of these names show up here.</span>
+        <input name="aliases" value="${esc(cl.aliases.join(', '))}" placeholder="Zendesk organization, repo folder, short code"></label>
       <div class="f zone-field"><span>Cloudflare zones</span>
         <input type="hidden" name="zones" value="${esc((cl.zones || []).join(','))}">
         <div class="zone-chips"></div>
@@ -3301,6 +3301,9 @@ async function clientSettings() {
       if (seen.has(code.toLowerCase())) { toast(`Client ${code} is listed twice`); return; }
       seen.add(code.toLowerCase());
       const names = g('aliases').split(',').map((s) => s.trim()).filter(Boolean);
+      // Renamed client: keep the old code as an alias so its chats and repo folders follow it.
+      const orig = $('[name=org]', c).dataset.orig;
+      if (orig && orig !== code && !names.some((n) => n.toLowerCase() === orig.toLowerCase())) names.push(orig);
       for (const name of names) orgAliases[name] = code;
       const zones = zonesOf(c);
       if (zones.length) clientZones[code] = zones;
