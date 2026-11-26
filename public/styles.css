@@ -106,6 +106,10 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .ticket .who { color: var(--text); font-weight: 600; }
 .ticket.st-pending .who, .ticket.st-hold .who { color: var(--muted); }
 .queue-head { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; padding: 12px 4px 4px; }
+.queue-bar { gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.queue-bar #queueTabs { margin-left: auto; flex-wrap: wrap; }
+.queue-client { display: flex; align-items: center; gap: 8px; padding: 12px 4px 4px; font-size: 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+.queue-client .count { margin-left: auto; font-weight: 400; }
 .seg { display: inline-flex; background: var(--panel-2); border-radius: 8px; padding: 2px; gap: 2px; }
 .seg button { border: none; background: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 13px; }
 .seg button.active { background: var(--panel); color: var(--text); box-shadow: var(--shadow); font-weight: 600; }

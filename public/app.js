@@ -507,7 +507,7 @@ function ticketRow(t) {
   // The status pill already says pending/on hold, so drop the matching score reason.
   const reasons = (t.reasons || []).filter((r) => r.pts !== 0 && !/^(Pending|On hold|Open, waiting|New, not yet)/.test(r.text));
   return `<div class="ticket st-${esc(t.status)}" data-ticket-open="${t.id}" title="Open in the ticket workspace">
-    <div class="score ${st.group === 'waiting' ? '' : scoreClass(t.score)}" title="Attention score">${Math.round(t.score)}</div>
+    <div class="score ${st.group === 'action' ? scoreClass(t.score) : ''}" title="Attention score">${Math.round(t.score)}</div>
     ${clientBadge(t.org, t.org_name)}
     <div style="min-width:0">
       <div class="title" data-ticket-open="${t.id}">${relPill(t)}<span class="status-pill st-${esc(t.status)}" title="${esc(st.who)}">${esc(st.label)}</span>#${t.id} ${esc(t.subject)}</div>
@@ -1278,7 +1278,7 @@ async function dashboard() {
     <div id="notice"></div>
     <div class="grid kpis" id="kpis"></div>
     <div class="grid two">
-      <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:6px"><h2 style="margin:0">Focus queue</h2><div class="seg" id="queueTabs"></div></div><div class="queue" id="queue"></div></div>
+      <div class="card"><div class="row queue-bar"><h2 style="margin:0">Focus queue</h2><div class="seg small" id="queueSort" title="Sort order"></div><div class="seg" id="queueTabs"></div></div><div class="queue" id="queue"></div></div>
       <div class="grid">
         <div class="card"><h2 id="barsTitle">Solved this week</h2><div class="bars" id="bars"></div></div>
         <div class="card"><h2>By organization <span class="sub" style="font-weight:400">· this week</span></h2><div id="byOrg"></div></div>
@@ -1306,9 +1306,28 @@ function relPill(t) {
   const tip = cc ? 'You are CC on this ticket; assigned to someone else' : 'You follow this ticket; assigned to someone else';
   return `<span class="rel-pill" title="${tip}">${cc ? 'CC' : 'Following'}</span>`;
 }
-function drawQueue(tickets, byMe = []) {
-  let tab = 'action';
-  try { tab = localStorage.getItem('mon.queueTab') || 'action'; } catch { /* storage unavailable */ }
+const lsGet = (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } };
+/**
+ * Ticket rows for one queue section. Sorted by score (the order the server sends), or by client:
+ * clients A→Z, each under its own small heading, tickets keeping their score order within a client.
+ */
+function queueRows(list, sort, limit) {
+  if (sort !== 'client') return list.slice(0, limit).map(ticketRow).join('');
+  const byOrg = new Map();
+  for (const t of list) {
+    const k = t.org || '';
+    if (!byOrg.has(k)) byOrg.set(k, []);
+    byOrg.get(k).push(t);
+  }
+  return [...byOrg.entries()]
+    .sort(([a], [b]) => (!a) - (!b) || a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    .map(([org, ts]) => `<div class="queue-client">${clientBadge(org, ts[0].org_name)}<span>${esc(ts[0].org_name && ts[0].org_name !== org ? ts[0].org_name : org ? '' : 'No client')}</span><span class="count">${ts.length}</span></div>${ts.map(ticketRow).join('')}`)
+    .join('');
+}
+function drawQueue(tickets, byMe = [], resolved = []) {
+  let tab = lsGet('mon.queueTab', 'action');
+  const sort = lsGet('mon.queueSort', 'score');
   const inQueue = tickets.filter(inFocus);
   const groups = {
     action: { label: 'Needs you', list: inQueue.filter((t) => !t.ignored && (!isMine(t) || statusOf(t).group === 'action')) },
@@ -1316,30 +1335,40 @@ function drawQueue(tickets, byMe = []) {
     ignored: { label: 'Cooling down', list: tickets.filter((t) => t.ignored) },
     mine: { label: 'Updated by me', list: byMe },
     all: { label: 'All', list: inQueue },
+    done: { label: 'Solved / Closed', list: resolved },
   };
   $('#queueTabs').innerHTML = Object.entries(groups).map(([k, g]) =>
     `<button class="${k === tab ? 'active' : ''}" data-qtab="${k}">${g.label} <span class="count">${g.list.length}</span></button>`).join('');
   $('#queueTabs').onclick = (e) => {
     const b = e.target.closest('[data-qtab]');
     if (!b) return;
-    try { localStorage.setItem('mon.queueTab', b.dataset.qtab); } catch { /* ignore */ }
-    drawQueue(tickets, byMe);
+    lsSet('mon.queueTab', b.dataset.qtab);
+    drawQueue(tickets, byMe, resolved);
+  };
+  const sortDefault = tab === 'done' ? 'Newest' : tab === 'mine' ? 'Latest' : 'Score';
+  $('#queueSort').innerHTML = [['score', sortDefault], ['client', 'Client']].map(([k, l]) =>
+    `<button class="${k === sort ? 'active' : ''}" data-qsort="${k}" title="${k === 'client' ? 'Group tickets by client' : `Sort by ${l.toLowerCase()}`}">${l}</button>`).join('');
+  $('#queueSort').onclick = (e) => {
+    const b = e.target.closest('[data-qsort]');
+    if (!b) return;
+    lsSet('mon.queueSort', b.dataset.qsort);
+    drawQueue(tickets, byMe, resolved);
   };
   if (!groups[tab]) tab = 'action'; // e.g. the removed Following tab was remembered
   const list = groups[tab].list;
-  const empty = { action: 'Nothing is waiting on you. 🎉', waiting: 'No tickets are waiting on customers.', ignored: 'Nothing cooling down. Cool down parks a mentioned ticket until you are mentioned again, or an unassigned one until something new happens on it. A ticket whose chat you cooled down (⋯ menu) waits here until someone else updates it.', mine: 'No tickets where you made the latest update in the last 24 hours.', all: 'No open tickets.' }[tab];
+  const empty = { action: 'Nothing is waiting on you. 🎉', waiting: 'No tickets are waiting on customers.', ignored: 'Nothing cooling down. Cool down parks a mentioned ticket until you are mentioned again, or an unassigned one until something new happens on it. A ticket whose chat you cooled down (⋯ menu) waits here until someone else updates it.', mine: 'No tickets where you made the latest update in the last 24 hours.', all: 'No open tickets.', done: 'No solved or closed tickets synced yet. Tickets you solve, or that you follow and get solved, show here.' }[tab];
   if (!list.length) { $('#queue').innerHTML = `<div class="empty">${empty}</div>`; return; }
   if (tab === 'action') {
     const fresh = list.filter((t) => t.relation === 'unassigned'), rest = list.filter((t) => t.relation !== 'unassigned');
-    $('#queue').innerHTML = (fresh.length ? `<div class="queue-head">New · unassigned · ${fresh.length}</div>${fresh.map(ticketRow).join('')}` : '')
-      + (rest.length ? `${fresh.length ? `<div class="queue-head">Your queue · ${rest.length}</div>` : ''}${rest.slice(0, 40).map(ticketRow).join('')}` : '');
+    $('#queue').innerHTML = (fresh.length ? `<div class="queue-head">New · unassigned · ${fresh.length}</div>${queueRows(fresh, sort)}` : '')
+      + (rest.length ? `${fresh.length ? `<div class="queue-head">Your queue · ${rest.length}</div>` : ''}${queueRows(rest, sort, 40)}` : '');
   } else if (tab === 'all') {
     // Keep the two kinds visually apart: everything that needs me first, then the waiting ones.
     const a = groups.action.list, w = groups.waiting.list;
-    $('#queue').innerHTML = (a.length ? `<div class="queue-head">Needs you · ${a.length}</div>${a.map(ticketRow).join('')}` : '')
-      + (w.length ? `<div class="queue-head">Waiting on customer / third party · ${w.length}</div>${w.map(ticketRow).join('')}` : '');
+    $('#queue').innerHTML = (a.length ? `<div class="queue-head">Needs you · ${a.length}</div>${queueRows(a, sort)}` : '')
+      + (w.length ? `<div class="queue-head">Waiting on customer / third party · ${w.length}</div>${queueRows(w, sort)}` : '');
   } else {
-    $('#queue').innerHTML = list.slice(0, tab === 'mine' ? 200 : 40).map(ticketRow).join('');
+    $('#queue').innerHTML = queueRows(list, sort, tab === 'mine' || tab === 'done' ? 200 : 40);
   }
 }
 const fmtDuration = (sec) => { const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60); return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`; };
@@ -1373,7 +1402,7 @@ async function zendeskQuickLogin(e) {
 
 async function refreshDashboard() {
   if (state.route.name !== 'dashboard') return;
-  const [status, tickets, perf, byMe, allTickets] = await Promise.all([api('/api/status'), api('/api/tickets'), api('/api/performance'), api('/api/tickets/updated-by-me').catch(() => []), api('/api/tickets?scope=all').catch(() => [])]);
+  const [status, tickets, perf, byMe, allTickets, resolved] = await Promise.all([api('/api/status'), api('/api/tickets'), api('/api/performance'), api('/api/tickets/updated-by-me').catch(() => []), api('/api/tickets?scope=all').catch(() => []), api('/api/tickets?scope=resolved').catch(() => [])]);
   const z = status.zendesk;
   state.meId = z.me?.id || null;
   $('#syncLine').textContent = !z.configured ? 'Zendesk not connected' :
@@ -1388,7 +1417,7 @@ async function refreshDashboard() {
     ['Needs you', (s.new || 0) + (s.open || 0), `${s.new || 0} new · ${s.open || 0} open`],
     ['Waiting', (s.pending || 0) + (s.hold || 0), `${s.pending || 0} pending (customer) · ${s.hold || 0} on hold`],
   ].map(([l, v, h]) => `<div class="card kpi"><div class="label">${l}</div><div class="value">${v}</div><div class="hint">${esc(h)}</div></div>`).join('');
-  drawQueue(tickets, byMe);
+  drawQueue(tickets, byMe, resolved);
   // This week, Monday to Sunday.
   const days = (perf.solvedByDay || []).filter((d) => !perf.weekStart || d.date >= perf.weekStart);
   const todayStr = localDate(new Date());

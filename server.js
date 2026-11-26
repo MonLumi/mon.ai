@@ -94,11 +94,12 @@ const CHAT_COOLED = "EXISTS (SELECT 1 FROM sessions s WHERE s.ticket_id = ticket
 const TICKET_COOLED = "(tickets.cooled_at IS NOT NULL AND NOT (tickets.updated_at > tickets.cooled_at AND tickets.updated_at IS NOT COALESCE(tickets.my_update_at, '')))";
 app.get('/api/tickets', wrap((req) => {
   const { org, scope = 'open' } = req.query;
-  const where = [scope === 'open' ? "status NOT IN ('solved','closed')" : '1=1'];
+  const resolved = scope === 'resolved';
+  const where = [scope === 'open' ? "status NOT IN ('solved','closed')" : resolved ? "status IN ('solved','closed')" : '1=1'];
   const args = [];
   if (org) { where.push('org = ?'); args.push(org); }
   return db.prepare(`SELECT id, subject, status, priority, org, org_name, requester, assignee, assignee_id, created_at, updated_at, due_at, sla_breach_at, COALESCE(relation, 'assigned') AS relation, needs_me, needs_me_reason, COALESCE(upvoted, 0) AS upvoted, upvoted_at, ((ignored_mention_at IS NOT NULL AND ((needs_me = 1 AND ignored_mention_at = needs_me_at) OR (COALESCE(relation, 'assigned') = 'unassigned' AND ignored_mention_at = updated_at))) OR ${CHAT_COOLED} OR ${TICKET_COOLED}) AS ignored, (${CHAT_COOLED} OR ${TICKET_COOLED}) AS chat_cooled, score, reasons, url, my_update_at
-    FROM tickets WHERE ${where.join(' AND ')} ORDER BY COALESCE(upvoted, 0) DESC, score DESC, updated_at DESC LIMIT 500`).all(...args)
+    FROM tickets WHERE ${where.join(' AND ')} ORDER BY ${resolved ? 'updated_at DESC' : 'COALESCE(upvoted, 0) DESC, score DESC, updated_at DESC'} LIMIT ${resolved ? 200 : 500}`).all(...args)
     .map((t) => ({ ...t, reasons: JSON.parse(t.reasons) }));
 }));
 // Tickets whose latest change was made by me in the last 24 hours (any status, any relation).
