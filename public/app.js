@@ -1407,13 +1407,29 @@ function drawByAssignee(team) {
   const el = $('#byAssignee');
   if (!el) return;
   if (!team?.agents?.length) { el.innerHTML = `<div class="sub">${team ? 'No time logged or tickets resolved yet this week.' : 'Loads after the next sync.'}</div>`; return; }
-  const list = [...team.agents].sort((a, b) => b.seconds - a.seconds || (b.resolved || 0) - (a.resolved || 0) || (b.open || 0) - (a.open || 0));
+  // Sort: click a column header; click again to flip the direction. Remembered in this browser.
+  let sort = { key: 'seconds', dir: -1 };
+  try { sort = JSON.parse(localStorage.getItem('mon.assigneeSort')) || sort; } catch { /* storage unavailable */ }
+  const val = (a, k) => (k === 'name' ? a.name.toLowerCase() : a[k] ?? -1);
+  const cmp = (a, b, k) => { const x = val(a, k), y = val(b, k); return x < y ? -1 : x > y ? 1 : 0; };
+  const list = [...team.agents].sort((a, b) => sort.dir * cmp(a, b, sort.key) || -cmp(a, b, 'seconds') || cmp(a, b, 'name'));
   const maxSec = Math.max(1, ...list.map((a) => a.seconds));
-  el.innerHTML = `<table class="assignees"><tr><th>Assignee</th><th class="num" title="Time Tracking: time logged since Monday">Time logged</th><th class="num" title="Open tickets in their queue (new, open, pending, on hold)">In queue</th><th class="num" title="Tickets assigned to them, solved since Monday">Resolved</th></tr>${list.map((a) => `<tr class="${a.me ? 'me' : ''}">
+  const th = (key, label, tip, num) => `<th class="sortable${num ? ' num' : ''}${sort.key === key ? ' sorted' : ''}" data-sort="${key}" title="${tip}">${label}<span class="sort-ind">${sort.key === key ? (sort.dir < 0 ? '▼' : '▲') : ''}</span></th>`;
+  el.innerHTML = `<div class="assignee-scroll"><table class="assignees"><tr>${th('name', 'Assignee', 'Sort by name', false)}${th('seconds', 'Time logged', 'Time Tracking: time logged since Monday', true)}${th('open', 'In queue', 'Open tickets in their queue (new, open, pending, on hold)', true)}${th('resolved', 'Resolved', 'Tickets assigned to them, solved since Monday', true)}</tr>${list.map((a) => `<tr class="${a.me ? 'me' : ''}">
       <td>${esc(a.name)}${a.me ? ' <span class="sub">(you)</span>' : ''}</td>
       <td class="num">${a.seconds ? fmtDuration(a.seconds) : '–'}<div class="logbar" style="width:${(a.seconds / maxSec) * 100}%;${a.seconds ? '' : 'visibility:hidden'}"></div></td>
-      <td class="num">${a.open ?? '–'}</td><td class="num">${a.resolved ?? '–'}</td></tr>`).join('')}</table>
+      <td class="num">${a.open ?? '–'}</td><td class="num">${a.resolved ?? '–'}</td></tr>`).join('')}</table></div>
     <div class="sub" style="margin-top:6px">Everyone with time logged or a ticket resolved since Monday${team.timeTracked ? '' : ' (Time Tracking fields not found, so no time logged)'} · updated ${ago(team.checkedAt)}, every 10 min.</div>`;
+  el.onclick = (e) => {
+    const h = e.target.closest('th[data-sort]');
+    if (!h) return;
+    const key = h.dataset.sort;
+    const next = { key, dir: sort.key === key ? -sort.dir : key === 'name' ? 1 : -1 }; // numbers start high→low, names A→Z
+    try { localStorage.setItem('mon.assigneeSort', JSON.stringify(next)); } catch { /* ignore */ }
+    const top = el.querySelector('.assignee-scroll')?.scrollTop || 0;
+    drawByAssignee(team);
+    const s = el.querySelector('.assignee-scroll'); if (s) s.scrollTop = top;
+  };
 }
 
 // ---------- static data cache (client settings, Cloudflare zones, repos) ----------
