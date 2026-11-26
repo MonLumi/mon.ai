@@ -1926,7 +1926,7 @@ document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-copy]');
   if (!b) return;
   const box = b.closest('.draft-card, .code-wrap, .msg');
-  const text = b.dataset.copy === 'answer'
+  const text = b.dataset.copyText != null ? b.dataset.copyText : b.dataset.copy === 'answer'
     ? box.dataset.raw || box.querySelector('.body')?.innerText || ''
     : box.classList.contains('draft-card') ? box.querySelector('.draft-text').textContent : box.querySelector('pre')?.innerText || '';
   const ok = await copyText(text);
@@ -2044,16 +2044,162 @@ function planText(p) {
   const lines = [`Plan: ${p.title}`, p.goal ? `Goal: ${p.goal}` : '', ''];
   p.steps.forEach((s, i) => {
     lines.push(`${i + 1}. [${(PLAN_ICONS[s.action] || ['', s.action])[1]}] ${s.summary}${s.target ? ` (${s.target})` : ''}`);
-    if (s.params && Object.keys(s.params).length) lines.push(`   ${Object.entries(s.params).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(' · ')}`);
+    for (const [k, v] of Object.entries(s.params || {})) {
+      const text = /expression$/i.test(k) && typeof v === 'string' ? formatCfExpression(stripFence(v))
+        : /expressionbuilder$/i.test(k) ? builderText(v)
+        : typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+      lines.push(`   ${paramLabel(k)}:${text.includes('\n') ? `\n${text.split('\n').map((l) => `      ${l}`).join('\n')}` : ` ${text}`}`);
+    }
     if (s.content) lines.push(s.content.split('\n').map((l) => `   | ${l}`).join('\n'));
     if (s.why) lines.push(`   Why: ${s.why}`);
   });
   if (p.assumptions?.length) lines.push('', 'Assumptions:', ...p.assumptions.map((a) => `- ${a}`));
   return lines.filter((l, i) => l || i > 1).join('\n');
 }
+/**
+ * Pretty-print a Cloudflare rules expression the way it reads best in the dashboard's expression editor:
+ * each and/or operand of a long group on its own line, nested groups indented by 4, long `in { }` lists
+ * one value per line. Expressions that already contain line breaks are kept as written.
+ */
+function formatCfExpression(src) {
+  const s = String(src || '').trim();
+  if (!s || s.includes('\n')) return s;
+  // Tokens: strings, { sets }, function calls f(...), parentheses, operators and plain words.
+  const toks = [];
+  let i = 0;
+  const readBalanced = (open, close) => {
+    let depth = 0; const start = i;
+    while (i < s.length) {
+      const c = s[i];
+      if (c === '"') { i++; while (i < s.length && s[i] !== '"') i += s[i] === '\\' ? 2 : 1; } else if (c === open) depth++;
+      else if (c === close && --depth === 0) { i++; break; }
+      i++;
+    }
+    return s.slice(start, i);
+  };
+  while (i < s.length) {
+    const c = s[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === '(' || c === ')') { toks.push({ t: c }); i++; continue; }
+    if (c === '"') { const st = i; i++; while (i < s.length && s[i] !== '"') i += s[i] === '\\' ? 2 : 1; i++; toks.push({ t: 'w', v: s.slice(st, i) }); continue; }
+    if (c === '{') { toks.push({ t: 'set', v: readBalanced('{', '}') }); continue; }
+    const m = s.slice(i).match(/^(&&|\|\||[A-Za-z_][\w.]*\(|[^\s(){}"]+)/);
+    if (!m) { toks.push({ t: 'w', v: c }); i++; continue; }
+    if (m[1].endsWith('(')) { toks.push({ t: 'w', v: readBalanced('(', ')') }); continue; }
+    i += m[1].length;
+    toks.push(/^(and|or|xor|&&|\|\|)$/i.test(m[1]) ? { t: 'op', v: m[1] } : { t: 'w', v: m[1] });
+  }
+  // Tree: a group is a list of operands (arrays of words / sub-groups) separated by operators.
+  let k = 0;
+  const parseGroup = () => {
+    const items = []; let cur = [];
+    while (k < toks.length) {
+      const tk = toks[k++];
+      if (tk.t === ')') break;
+      if (tk.t === '(') cur.push({ group: parseGroup() });
+      else if (tk.t === 'op') { items.push({ operand: cur }, { op: tk.v }); cur = []; } else cur.push(tk);
+    }
+    if (cur.length) items.push({ operand: cur });
+    return items;
+  };
+  const tree = parseGroup();
+  const IND = '    ';
+  const flat = (items) => items.map((it) => (it.op ? it.op : it.operand.map((x) => (x.group ? `(${flat(x.group)})` : x.v)).join(' '))).join(' ');
+  const setLines = (v, ind) => {
+    const vals = v.slice(1, -1).match(/"(?:[^"\\]|\\.)*"|[^\s"]+/g) || [];
+    return v.length + ind.length <= 100 ? `{${vals.join(' ')}}` : `{\n${vals.map((x) => ind + IND + x).join('\n')}\n${ind}}`;
+  };
+  const operand = (o, ind) => o.map((x) => (x.group ? render(x.group, ind, true) : x.t === 'set' ? setLines(x.v, ind) : x.v)).join(' ');
+  function render(items, ind, paren) {
+    const oneLine = flat(items);
+    if (oneLine.length + ind.length <= 100 && !items.some((it) => it.operand?.some((x) => x.t === 'set' && x.v.length > 60))) return paren ? `(${oneLine})` : oneLine;
+    const inner = paren ? ind + IND : ind;
+    const lines = [];
+    let afterOp = false;
+    items.forEach((it) => {
+      if (it.op) { lines[lines.length - 1] += ` ${it.op}`; afterOp = true; return; }
+      const text = operand(it.operand, inner);
+      // ") and (" style: a multi-line group continues the line of the operator before it
+      if (afterOp && text.startsWith('(\n')) lines[lines.length - 1] += ` ${text}`;
+      else lines.push(inner + text);
+      afterOp = false;
+    });
+    return paren ? `(\n${lines.join('\n')}\n${ind})` : lines.join('\n').replace(/^\s+/, '');
+  }
+  return render(tree, '', false);
+}
+
+// Field labels and layout for plan step params (e.g. a Cloudflare dashboard change).
+const PARAM_LABELS = {
+  ruleType: 'Rule type', ruleName: 'Rule name', expressionBuilder: 'Expression builder', currentExpressionBuilder: 'Current builder',
+  expression: 'Expression', currentExpression: 'Current expression', actions: 'Action', currentAction: 'Current action',
+  additionalConfig: 'Additional config', order: 'Order', deploy: 'Draft / deploy', rollback: 'Rollback',
+};
+const PARAM_COPY = new Set(['ruleName', 'expression', 'currentExpression']);
+const paramLabel = (k) => PARAM_LABELS[k] || k.replace(/[_-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+const stripFence = (v) => String(v).trim().replace(/^```[\w-]*\n?/, '').replace(/\n?```$/, '').trim();
+const smallCopy = (text, label = 'Copy') => `<button type="button" class="copy-btn" data-copy data-copy-text="${esc(text)}">${COPY_ICON}<span>${label}</span></button>`;
+
+/** The dashboard's expression builder: groups (joined by OR) of Field / Operator / Value rows (joined by AND). */
+function builderHtml(b) {
+  const groups = Array.isArray(b) ? b : b?.groups;
+  if (!Array.isArray(groups)) return null;
+  const join = (b?.join || 'Or').replace(/^./, (c) => c.toUpperCase());
+  const value = (v) => {
+    const vals = Array.isArray(v) ? v : [v];
+    return `<div class="pb-vals">${vals.map((x) => `<span class="pb-val"><code>${esc(String(x ?? ''))}</code>${smallCopy(String(x ?? ''), '')}</span>`).join('')}</div>`;
+  };
+  return `<div class="pb">${groups.map((g, gi) => {
+    const conds = Array.isArray(g) ? g : g.conditions || [];
+    const gJoin = (g.join || 'And').replace(/^./, (c) => c.toUpperCase());
+    return `${gi ? `<div class="pb-join">${esc(join)}</div>` : ''}<div class="pb-group">${g.label ? `<div class="pb-label">${esc(g.label)}</div>` : ''}
+      <table class="pb-table"><thead><tr><th></th><th>Field</th><th>Operator</th><th>Value</th></tr></thead><tbody>${conds.map((c, ci) => `<tr>
+        <td class="pb-and">${ci ? esc(gJoin) : ''}</td><td>${esc(c.field || '')}</td><td>${esc(c.operator || '')}</td><td>${value(c.value)}</td></tr>`).join('')}</tbody></table></div>`;
+  }).join('')}</div>`;
+}
+
+/** The builder as plain text (Copy plan): one line per condition, groups separated by Or. */
+function builderText(b) {
+  if (typeof b === 'string') { try { b = JSON.parse(stripFence(b)); } catch { return b; } }
+  const groups = Array.isArray(b) ? b : b?.groups;
+  if (!Array.isArray(groups)) return JSON.stringify(b, null, 2);
+  return groups.map((g, gi) => {
+    const conds = Array.isArray(g) ? g : g.conditions || [];
+    return [gi ? (b.join || 'Or').toUpperCase() : null, g.label ? `[${g.label}]` : null,
+      ...conds.map((c, ci) => `${ci ? `${(g.join || 'And').toUpperCase()} ` : ''}${c.field} | ${c.operator} | ${Array.isArray(c.value) ? c.value.join(', ') : c.value}`)].filter(Boolean).join('\n');
+  }).join('\n');
+}
+
+/** One param of a plan step: short values inline, long ones (expressions, builders) as collapsible blocks. */
+function paramHtml(k, v, params) {
+  const label = paramLabel(k);
+  if (/expressionbuilder$/i.test(k)) {
+    if (typeof v === 'string' && /^\s*[[{]/.test(stripFence(v))) { try { v = JSON.parse(stripFence(v)); } catch { /* shown as text */ } }
+    const html = builderHtml(v);
+    if (html) return `<details class="pp-block" ${k === 'expressionBuilder' ? 'open' : ''}><summary>${esc(label)}${k === 'expressionBuilder' ? ' <span class="pill green">use this</span>' : ''}</summary>${html}</details>`;
+  }
+  if (/expression$/i.test(k) && typeof v === 'string') {
+    const code = formatCfExpression(stripFence(v));
+    const open = k === 'expression' && !params.expressionBuilder;
+    return `<details class="pp-block" ${open ? 'open' : ''}><summary>${esc(label)}${k === 'expression' && params.expressionBuilder ? ' <span class="muted">same rule as text, for Edit expression</span>' : ''}</summary>
+      <div class="pp-code"><pre>${esc(code)}</pre>${smallCopy(code)}</div></details>`;
+  }
+  let text = typeof v === 'string' ? v : Array.isArray(v) && v.every((x) => typeof x !== 'object') ? v.join('\n') : JSON.stringify(v, null, 2);
+  text = stripFence(text);
+  // The dashboard form's own fields always stay visible; other long values fold away.
+  const core = ['ruleType', 'ruleName', 'actions', 'additionalConfig', 'order', 'deploy'].includes(k);
+  const long = !core && (text.length > 160 || text.split('\n').length > 3);
+  if (long) return `<details class="pp-block"><summary>${esc(label)} <span class="muted">${esc(text.split('\n')[0].slice(0, 80))}…</span></summary><div class="pp-text">${esc(text)}</div></details>`;
+  return `<div class="pp-row"><span class="pp-k">${esc(label)}</span><span class="pp-v">${esc(text)}${PARAM_COPY.has(k) ? smallCopy(text, '') : ''}</span></div>`;
+}
+function paramsHtml(params) {
+  const order = Object.keys(PARAM_LABELS);
+  const keys = Object.keys(params).sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+  return `<div class="plan-params">${keys.map((k) => paramHtml(k, params[k], params)).join('')}</div>`;
+}
+
 function planCard(p) {
   if (!p?.steps?.length) return '';
-  const val = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
   const steps = p.steps.map((s, i) => {
     const [icon, kind] = PLAN_ICONS[s.action] || ['•', s.action];
     const risk = s.risk || (s.action === 'zendesk_public_reply' ? 'high' : '');
@@ -2062,7 +2208,7 @@ function planCard(p) {
       <div class="plan-main">
         <div class="plan-line"><span class="plan-kind">${icon} ${esc(kind)}</span>${s.target ? `<span class="pill">${esc(s.target)}</span>` : ''}${risk ? `<span class="pill ${risk === 'high' ? 'red' : risk === 'medium' ? 'amber' : 'green'}">${esc(risk)} risk</span>` : ''}${s.reversible === false ? '<span class="pill amber">can\'t undo</span>' : ''}</div>
         <div class="plan-summary">${esc(s.summary)}</div>
-        ${s.params && Object.keys(s.params).length ? `<dl class="plan-params">${Object.entries(s.params).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(val(v))}</dd>`).join('')}</dl>` : ''}
+        ${s.params && Object.keys(s.params).length ? paramsHtml(s.params) : ''}
         ${s.content ? `<div class="plan-content">${esc(s.content)}</div>` : ''}
         ${s.why ? `<div class="plan-why">${esc(s.why)}</div>` : ''}
       </div></li>`;
