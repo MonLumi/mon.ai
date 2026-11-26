@@ -90,7 +90,7 @@ app.get('/api/orgs', wrap(() => {
 // ---------- Zendesk ----------
 // A ticket whose chat you cooled down (chat ⋯ menu) counts as cooling down until someone else updates it after that.
 const CHAT_COOLED = "EXISTS (SELECT 1 FROM sessions s WHERE s.ticket_id = tickets.id AND s.archived_at IS NULL AND s.cooled_at IS NOT NULL AND NOT (tickets.updated_at > s.cooled_at AND tickets.updated_at IS NOT COALESCE(tickets.my_update_at, '')))";
-// …and so does a ticket you cooled down from its ticket screen (⋯ menu) before it had a chat.
+// …and so does a ticket you cooled down from its ticket workspace (⋯ menu) before it had a chat.
 const TICKET_COOLED = "(tickets.cooled_at IS NOT NULL AND NOT (tickets.updated_at > tickets.cooled_at AND tickets.updated_at IS NOT COALESCE(tickets.my_update_at, '')))";
 app.get('/api/tickets', wrap((req) => {
   const { org, scope = 'open' } = req.query;
@@ -117,7 +117,7 @@ app.get('/api/zendesk/file', async (req, res) => {
     else res.type('application/octet-stream').attachment(name).send(f.buf);
   } catch (e) { res.status(e.status || 500).type('text/plain').send(e.message); }
 });
-// Status change / internal note, made by you from the Preview panel (never by the assistant).
+// Status change / internal note, made by you from the Zendesk panel (never by the assistant).
 app.post('/api/tickets/:id/update', wrap((req) => {
   const b = req.body || {};
   return zendesk.updateTicketAsMe(Number(req.params.id), {
@@ -135,7 +135,7 @@ app.post('/api/tickets/:id/update', wrap((req) => {
     uploads: b.uploads,
   });
 }));
-// An image pasted into the Preview editor goes to Zendesk's Uploads API; Submit attaches it by its token.
+// An image pasted into the Zendesk panel's editor goes to Zendesk's Uploads API; Submit attaches it by its token.
 app.post('/api/zendesk/uploads', express.raw({ type: 'application/octet-stream', limit: '20mb' }), wrap((req) => zendesk.uploadFile(String(req.query.name || 'image.png'), String(req.query.type || ''), req.body)));
 app.post('/api/tickets/:id/ignore', wrap((req) => zendesk.setIgnored(Number(req.params.id), !!req.body.ignore)));
 app.post('/api/tickets/:id/upvote', wrap((req) => {

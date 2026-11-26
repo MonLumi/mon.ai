@@ -133,7 +133,7 @@ function trackCooldown(sessions) {
       toast(`#${s.ticket_id} is back: new update, needs you again`);
     }
   }
-  // Opening the chat (or its ticket screen) clears the marker; forget chats that are gone.
+  // Opening the chat (or its ticket workspace) clears the marker; forget chats that are gone.
   for (const id of [...cooldown.back]) {
     const s = sessions.find((x) => x.id === id);
     if (!ids.has(id) || (r.name === 'chat' && r.id === id) || (r.name === 'ticket' && (r.sub === id || (!r.sub && s && Number(r.id) === s.ticket_id)))) cooldown.back.delete(id);
@@ -472,7 +472,7 @@ function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
   };
   document.addEventListener('selectionchange', track);
   const outside = (e) => {
-    if (!bar.isConnected) { document.removeEventListener('mousedown', outside); return; } // Preview re-rendered
+    if (!bar.isConnected) { document.removeEventListener('mousedown', outside); return; } // Zendesk panel re-rendered
     if (!e.target.closest('.rte-color-wrap')) colors.hidden = true;
   };
   document.addEventListener('mousedown', outside);
@@ -506,11 +506,11 @@ function ticketRow(t) {
   const st = statusOf(t);
   // The status pill already says pending/on hold, so drop the matching score reason.
   const reasons = (t.reasons || []).filter((r) => r.pts !== 0 && !/^(Pending|On hold|Open, waiting|New, not yet)/.test(r.text));
-  return `<div class="ticket st-${esc(t.status)}" data-preview="${t.id}" title="Open ticket (AI chat · preview · client)">
+  return `<div class="ticket st-${esc(t.status)}" data-ticket-open="${t.id}" title="Open in the ticket workspace">
     <div class="score ${st.group === 'waiting' ? '' : scoreClass(t.score)}" title="Attention score">${Math.round(t.score)}</div>
     ${clientBadge(t.org, t.org_name)}
     <div style="min-width:0">
-      <div class="title" data-preview="${t.id}">${relPill(t)}<span class="status-pill st-${esc(t.status)}" title="${esc(st.who)}">${esc(st.label)}</span>#${t.id} ${esc(t.subject)}</div>
+      <div class="title" data-ticket-open="${t.id}">${relPill(t)}<span class="status-pill st-${esc(t.status)}" title="${esc(st.who)}">${esc(st.label)}</span>#${t.id} ${esc(t.subject)}</div>
       <div class="meta"><b class="assignee" title="Assignee">👤 ${esc(t.assignee_id && t.assignee_id === state.meId ? 'You' : t.assignee || 'Unassigned')}</b> · ${esc(t.requester || 'unknown requester')} · ${t.my_update_at ? `<b>you updated ${ago(t.my_update_at)}</b>` : `updated ${ago(t.updated_at)}`}</div>
       <div class="reasons">${reasons.map(reasonPill).join('')}</div>
     </div>
@@ -549,8 +549,8 @@ const onTicketAction = async (e) => {
     return;
   }
   if (e.target.closest('a, button, select, input, textarea')) return; // other links/buttons in a row do their own thing
-  const p = e.target.closest('[data-preview]'); // clicking anywhere else on a ticket opens the preview
-  if (p) location.hash = `#/ticket/${p.dataset.preview}`;
+  const p = e.target.closest('[data-ticket-open]'); // clicking anywhere else on a ticket opens the ticket workspace
+  if (p) location.hash = `#/ticket/${p.dataset.ticketOpen}`;
 };
 view.addEventListener('click', onTicketAction);
 view.addEventListener('click', (e) => {
@@ -561,7 +561,7 @@ let pendingPrompt = null;
 let pendingSkill = null; // whose model pendingPrompt uses (Ask AI = triage-ticket)
 let chatTicketWatch = null; // set by an open ticket chat; called when tickets sync
 
-// ---------------- ticket preview (middle column of the ticket screen) ----------------
+// ---------------- Zendesk panel (middle column of the ticket workspace) ----------------
 const when = (iso) => iso ? `${new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${ago(iso)}` : '—';
 
 const zdDirectory = () => cached('zdDirectory', () => api('/api/zendesk/directory'));
@@ -624,7 +624,7 @@ function commentFiles(c) {
 document.addEventListener('click', (e) => { const img = e.target.closest('img.zd-img'); if (img?.dataset.full) window.open(img.dataset.full, '_blank', 'noopener'); });
 
 /** Ticket details and the update form, drawn into `body`. Resolves with the details (null on error). */
-async function renderPreview(id, body, { fresh = false, head = null } = {}) {
+async function renderZendeskPanel(id, body, { fresh = false, head = null } = {}) {
   const seq = String(Math.random());
   body.dataset.seq = seq;
   const stale = () => body.dataset.seq !== seq || !body.isConnected; // reloaded, or you left the page
@@ -641,7 +641,7 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
   const reasons = (d.reasons || []).filter((r) => r.pts !== 0);
   let zdOrigin = '';
   try { zdOrigin = new URL(url).origin; } catch { /* no link yet */ }
-  const pvButtons = `<button class="icon-btn" id="pvReload" title="${d.cached ? 'Preview shown from cache (kept until the ticket changes). Click to reload from Zendesk' : 'Reload the preview from Zendesk'}">↻</button>${url ? `<a class="btn small primary" href="${esc(url)}" target="_blank" rel="noopener">Open in Zendesk</a>` : ''}`;
+  const zendeskButtons = `<button class="icon-btn" id="zendeskReload" title="${d.cached ? 'Ticket shown from cache (kept until the ticket changes). Click to reload from Zendesk' : 'Reload the ticket from Zendesk'}">↻</button>${url ? `<a class="btn small primary" href="${esc(url)}" target="_blank" rel="noopener">Open in Zendesk</a>` : ''}`;
   const pills = `<span class="status-pill st-${esc(t.status)}">${esc(st.label)}</span>
       <span class="pill">${esc(t.priority || 'no priority')}</span>
       ${d.score != null ? `<span class="pill ${d.score >= 40 ? 'red' : ''}">score ${Math.round(d.score)}</span>` : ''}
@@ -649,16 +649,16 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     ? `<span class="pill assignee ${d.assignee.me ? 'me' : ''}" title="Assigned to ${esc(d.assignee.name)}${d.assignee.me ? ' (you)' : ''}">👤 ${esc(d.assignee.me ? 'You' : d.assignee.name)}</span>`
     : '<span class="pill amber assignee" title="Nobody is assigned yet">👤 Unassigned</span>'}`;
   if (head) {
-    // ticket screen: one header for the ticket and its chat
+    // ticket workspace: one header for the ticket and its chat
     head.info.innerHTML = `<div class="tvh-line">${d.org ? clientBadge(d.org) : ''}<span class="tvh-id">#${t.id}</span>${pills}</div><h1 title="${esc(t.subject || '')}">${esc(t.subject || '(no subject)')}</h1>`;
     if (head.chips) head.info.querySelector('.tvh-line').append(head.chips); // the chat's chips sit on the same row
-    head.actions.innerHTML = pvButtons;
+    head.actions.innerHTML = zendeskButtons;
   }
   body.innerHTML = `
-    ${head ? '' : `<div class="pv-sticky">
+    ${head ? '' : `<div class="zendesk-sticky">
     <div class="drawer-head">
       <div style="min-width:0"><div class="sub">#${t.id} · ${esc(d.org || '')}</div><h2>${esc(t.subject || '(no subject)')}</h2></div>
-      <div class="row" style="gap:6px;flex:none">${pvButtons}</div>
+      <div class="row" style="gap:6px;flex:none">${zendeskButtons}</div>
     </div>
     <div class="row" style="margin:8px 0 12px">${pills}<span class="sub">${esc(st.who)}</span></div>
     </div>`}
@@ -682,9 +682,9 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
         ${commentHtml(c, zdOrigin)}
         ${commentFiles(c)}
       </div>`).join('') || '<div class="sub">No comments.</div>'}</div>`;
-  $('#pvReload', head ? head.actions : body).onclick = () => renderPreview(id, body, { fresh: true, head });
-  // Header stays at the top while the Preview scrolls; a shadow shows once content is underneath.
-  const sticky = $('.pv-sticky', body);
+  $('#zendeskReload', head ? head.actions : body).onclick = () => renderZendeskPanel(id, body, { fresh: true, head });
+  // Header stays at the top while the Zendesk panel scrolls; a shadow shows once content is underneath.
+  const sticky = $('.zendesk-sticky', body);
   body.onscroll = () => sticky?.classList.toggle('stuck', body.scrollTop > 4);
   // Long messages: drag the corner to resize, or "Show all" / "Collapse"
   body.querySelectorAll('.comment-body').forEach((el) => {
@@ -805,7 +805,7 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
   // ---- ⤢ Big editor: the whole Update ticket box (timer, reply/note, CC, macros, formatting,
   //      assignee, followers, status, category, Submit) moves into a large popup and works as usual.
   //      Submit sends as usual · Cancel throws away what changed since it opened ·
-  //      click outside (or Esc) brings everything back to the Preview to keep editing.
+  //      click outside (or Esc) brings everything back to the Zendesk panel to keep editing.
   let bigPop = null; // { wrap, home, snap }
   editor.addEventListener('dblclick', (e) => {
     const rect = editor.getBoundingClientRect();
@@ -818,8 +818,8 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     const { wrap, home, snap } = bigPop;
     bigPop = null;
     document.removeEventListener('keydown', bigKey, true);
-    if (!home.isConnected) { wrap.remove(); toast('The Preview reloaded meanwhile; your text was not kept'); return; }
-    home.replaceWith(form);                          // back into the Preview, where it was
+    if (!home.isConnected) { wrap.remove(); toast('The Zendesk panel reloaded meanwhile; your text was not kept'); return; }
+    home.replaceWith(form);                          // back into the Zendesk panel, where it was
     wrap.remove();
     if (how === 'cancel') {
       editor.innerHTML = snap.html;
@@ -843,12 +843,12 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     if (bigPop) { closeBig('keep'); return; }
     const home = document.createElement('div');
     home.className = 'tk-compose-home';
-    home.style.height = `${form.offsetHeight}px`;   // keep the Preview from jumping while it's away
+    home.style.height = `${form.offsetHeight}px`;   // keep the Zendesk panel from jumping while it's away
     form.replaceWith(home);
     const wrap = document.createElement('div');
     wrap.className = 'big-compose-wrap';
     wrap.innerHTML = `<div class="big-compose" role="dialog" aria-modal="true" aria-label="Update #${t.id}">
-      <div class="big-compose-head"><b>#${t.id}</b> <span class="sub big-compose-subj">${esc(t.subject || '')}</span><span class="big-compose-hint sub">Click outside to keep editing in the Preview</span><button type="button" class="btn small" data-big="cancel" title="Close and discard what you changed here">Cancel</button></div>
+      <div class="big-compose-head"><b>#${t.id}</b> <span class="sub big-compose-subj">${esc(t.subject || '')}</span><span class="big-compose-hint sub">Click outside to keep editing in the Zendesk panel</span><button type="button" class="btn small" data-big="cancel" title="Close and discard what you changed here">Cancel</button></div>
       <div class="big-compose-body"></div>
     </div>`;
     wrap.querySelector('.big-compose-body').append(form);
@@ -859,7 +859,7 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     } };
     wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) closeBig('keep'); });
     wrap.querySelector('[data-big="cancel"]').onclick = () => closeBig('cancel');
-    // Submit (the box's own button): put the box back in the Preview first, then it sends as usual
+    // Submit (the box's own button): put the box back in the Zendesk panel first, then it sends as usual
     wrap.addEventListener('submit', () => closeBig('submit'), true);
     document.addEventListener('keydown', bigKey, true);
     editor.focus();
@@ -1015,12 +1015,12 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     else if (!e.target.closest('.chip')) ccInput.focus();
   });
 
-  // ---- timer: starts when the Preview opens; pause, reset, or type your own time before Submit
+  // ---- timer: starts when the Zendesk panel opens; pause, reset, or type your own time before Submit
   let elapsed = 0, running = true, lastTick = Date.now();
   const fmtTime = (sec) => `${Math.floor(sec / 3600)}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
   const seconds = () => Math.floor(elapsed / 1000);
   const tick = () => {
-    if (!form.isConnected) { clearInterval(timerId); return; }   // Preview closed or reloaded
+    if (!form.isConnected) { clearInterval(timerId); return; }   // Zendesk panel closed or reloaded
     const now = Date.now();
     if (running) elapsed += now - lastTick;
     lastTick = now;
@@ -1245,7 +1245,7 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     try {
       await api(`/api/tickets/${t.id}/update`, { method: 'POST', body: changes });
       toast(`#${t.id} updated${changes.timeSpent ? ` · ${fmtTime(changes.timeSpent)} logged` : ''}`);
-      renderPreview(t.id, body, { head });
+      renderZendeskPanel(t.id, body, { head });
     } catch (err) {
       toast(err.message);
       btn.disabled = false; btn.textContent = 'Submit';
@@ -2392,13 +2392,13 @@ async function chatPage(id, opts = {}) {
   if (!id) return chatList();
   if (id === 'archived') return chatList('archive');
   if (id === 'deep') return chatList('deep');
-  const host = opts.host || view;          // the ticket screen draws the chat in its first column
+  const host = opts.host || view;          // the ticket workspace draws the chat in its first column
   const embedded = !!opts.host;
   const alive = () => (embedded ? host.isConnected : state.route.name === 'chat' && state.route.id === id);
   const [s, models] = await Promise.all([api(`/api/sessions/${id}`).catch(() => null), getModels()]);
   if (!s) { host.innerHTML = '<div class="empty">Chat not found. <a href="#/chat">All chats</a></div>'; return; }
   if (!alive()) return; // navigated away meanwhile
-  // A ticket's chat lives on the ticket screen, next to its preview and client.
+  // A ticket's chat lives on the ticket workspace, next to its Zendesk panel and Client panel.
   if (!embedded && s.ticket_id) { location.replace(`#/ticket/${s.ticket_id}/${id}`); return; }
   const isClient = s.org && s.org !== 'All';
   const hasClient = !embedded && isClient;
@@ -2407,7 +2407,7 @@ async function chatPage(id, opts = {}) {
   host.innerHTML = `<div class="chat-layout ${hasClient && sideOpen ? 'with-side' : ''}">
    <div class="chat">
     <div class="chat-head"><div style="min-width:0">${embedded
-      // on the ticket screen these go into the shared header (which already shows the client and ticket)
+      // on the ticket workspace these go into the shared header (which already shows the client and ticket)
       ? `<div class="chat-chips"><span class="pill ai">✦ AI chat</span><span class="pill" title="The assistant can read Zendesk, Cloudflare, Azure/ADO and your local repos, never change them">🔒 read-only</span><span id="chatCostChip"></span>${s.archived_at ? '<span class="pill amber">archived</span>' : ''}</div>`
       : `<div class="sub"><a href="#/chat">← All chats</a></div><h1>${esc(s.title)}</h1><div class="sub">${isClient ? esc(s.org) : 'General'} · read-only tools: Zendesk, Cloudflare, Azure/ADO, local repos</div>`}</div>
       <div class="row"><label class="model-pick" title="Model for this chat">Model <select id="chatModel">${modelOptions(models, s.model || '', s.defaultModel)}</select></label>
@@ -2443,7 +2443,7 @@ async function chatPage(id, opts = {}) {
    ${hasClient ? '<aside class="chat-side" id="chatSide"><div class="sub">Loading…</div></aside>' : ''}
   </div>`;
   if (embedded) api(`/api/usage/chat/${encodeURIComponent(id)}`).then(fillCostChip).catch(() => {});
-  // ticket screen: the chat's chips and controls live in the shared header above chat and preview
+  // ticket workspace: the chat's chips and controls live in the shared header above the Chat panel and Zendesk panel
   const headSlot = embedded ? $('#tvHeadChat') : null;
   if (headSlot) {
     // the chips (AI chat, read-only, cost) join the ticket's status row; the controls stay on the right
@@ -2458,7 +2458,7 @@ async function chatPage(id, opts = {}) {
   const inner = $('.msgs-inner', msgs);
   msgs.scrollTop = msgs.scrollHeight;
 
-  // ---- client panel (cached static data + live sign-in + open tickets)
+  // ---- Client panel (cached static data + live sign-in + open tickets)
   if (hasClient) {
     Promise.all([clientInfo(s.org), api(`/api/tickets?org=${encodeURIComponent(s.org)}`).catch(() => [])]).then(([info, tickets]) => {
       if (!$('#chatSide')) return;
@@ -2812,15 +2812,15 @@ async function chatPage(id, opts = {}) {
   else input.focus();
 }
 
-// ---------------- ticket screen: Ask AI · Preview · client ----------------
-// The chat's chips live in the header's status row; this element survives the Preview re-rendering it.
+// ---------------- ticket workspace: Chat panel · Zendesk panel · Client panel ----------------
+// The chat's chips live in the header's status row; this element survives the Zendesk panel re-rendering it.
 let tvChipsEl = null;
 function tvChips() {
   if (!tvChipsEl || (!tvChipsEl.isConnected && !document.getElementById('tvHeadInfo'))) { tvChipsEl = document.createElement('span'); tvChipsEl.className = 'tvh-chips'; }
   return tvChipsEl;
 }
-// The client column is docked or hidden; remembered.
-const tvSideShown = () => { try { return localStorage.getItem('mon.tvSide') !== 'hide'; } catch { return true; } };
+// The Client panel is docked or hidden; remembered.
+const tvClientShown = () => { try { return localStorage.getItem('mon.tvSide') !== 'hide'; } catch { return true; } };
 
 /** A ⋯ menu: open/close, Esc and arrow keys, click outside closes. `onAct(action, button)` runs the item. */
 function wireMenu(btn, menu, onAct) {
@@ -2845,11 +2845,11 @@ function wireMenu(btn, menu, onAct) {
   });
 }
 
-// Ticket screen before a chat exists: the model you pick there is used by the chat Ask AI starts.
+// Ticket workspace before a chat exists: the model you pick there is used by the chat Ask AI starts.
 let ticketModel = '';
 function setTicketModelPicker(v) { ticketModel = v || ''; }
 
-/** Ticket screen with no chat yet: model picker and ⋯ menu (Cooldown works on the ticket itself). */
+/** Ticket workspace with no chat yet: model picker and ⋯ menu (Cooldown works on the ticket itself). */
 async function drawNoChatHead(tid) {
   const slot = $('#tvHeadChat');
   const [models, tickets] = await Promise.all([getModels(), api('/api/tickets?scope=all').catch(() => [])]);
@@ -2897,27 +2897,27 @@ async function startTicketChat(tid, org, subject, host, prompt, skill = null) {
 
 // Client panel: a header (client name + controls) and a body of cards, so the same markup
 // works as a right column or as a horizontal strip under the ticket header.
-function shapeSide(side) {
-  const head = document.createElement('div'); head.className = 'tv-side-head';
-  const body = document.createElement('div'); body.className = 'tv-side-cards';
-  [...side.children].forEach((el) => (el.matches('.tv-side-bar, .side-title') ? head : body).appendChild(el));
-  const bar = head.querySelector('.tv-side-bar'); if (bar) head.appendChild(bar); // controls go last (right)
+function shapeClient(side) {
+  const head = document.createElement('div'); head.className = 'tv-client-head';
+  const body = document.createElement('div'); body.className = 'tv-client-cards';
+  [...side.children].forEach((el) => (el.matches('.tv-client-bar, .side-title') ? head : body).appendChild(el));
+  const bar = head.querySelector('.tv-client-bar'); if (bar) head.appendChild(bar); // controls go last (right)
   side.replaceChildren(head, body);
 }
 
 async function ticketPage(id, chatId) {
   const tid = Number(id);
   if (!tid) { view.innerHTML = '<div class="empty">Not a ticket number.</div>'; return; }
-  view.innerHTML = `<div class="tv ${tvSideShown() ? 'side-open' : ''}" id="tv">
-    <header class="tv-head"><div class="tvh-info" id="tvHeadInfo"><h1>#${esc(tid)}</h1></div><div class="tvh-actions"><div class="tvh-chat" id="tvHeadChat"></div><div class="tvh-pv" id="tvHeadPv"></div></div></header>
+  view.innerHTML = `<div class="tv ${tvClientShown() ? 'client-open' : ''}" id="tv">
+    <header class="tv-head"><div class="tvh-info" id="tvHeadInfo"><h1>#${esc(tid)}</h1></div><div class="tvh-actions"><div class="tvh-chat" id="tvHeadChat"></div><div class="tvh-zendesk" id="tvHeadZendesk"></div></div></header>
     <section class="tv-col tv-chat" id="tvChat"><div class="sub">Loading…</div></section>
-    <div class="tv-split" id="tvSplit" title="Drag to make the chat or the preview wider · double-click to reset" role="separator" aria-orientation="vertical"></div>
-    <section class="tv-col tv-preview" id="tvPreview"></section>
-    <aside class="tv-col tv-side" id="tvSide" aria-label="Client"><div class="sub">Loading…</div></aside>
-    <button class="tv-side-tab" id="tvSideTab" title="Show the client panel">Client</button>
+    <div class="tv-split" id="tvSplit" title="Drag to make the Chat panel or the Zendesk panel wider · double-click to reset" role="separator" aria-orientation="vertical"></div>
+    <section class="tv-col tv-zendesk" id="tvZendesk"></section>
+    <aside class="tv-col tv-client" id="tvClient" aria-label="Client panel"><div class="sub">Loading…</div></aside>
+    <button class="tv-client-tab" id="tvClientTab" title="Show the Client panel">Client</button>
   </div>`;
   const tv = $('#tv');
-  // ---- chat | preview split: drag the divider; remembered per ticket (double-click: back to default)
+  // ---- Chat panel | Zendesk panel split: drag the divider; remembered per ticket (double-click: back to default)
   const splitKey = `mon.split.${tid}`;
   const setSplit = (r) => { if (r) tv.style.setProperty('--chat-fr', `${(r / (1 - r)).toFixed(3)}fr`); else tv.style.removeProperty('--chat-fr'); };
   try { setSplit(Number(localStorage.getItem(splitKey)) || 0); } catch { /* ignore */ }
@@ -2926,7 +2926,7 @@ async function ticketPage(id, chatId) {
     e.preventDefault();
     try { split.setPointerCapture(e.pointerId); } catch { /* lost pointer */ }
     const left = $('#tvChat').getBoundingClientRect().left;
-    const right = $('#tvPreview').getBoundingClientRect().right;
+    const right = $('#tvZendesk').getBoundingClientRect().right;
     let ratio = null;
     tv.classList.add('resizing');
     const move = (ev) => { ratio = Math.min(0.8, Math.max(0.2, (ev.clientX - left) / (right - left))); setSplit(ratio); };
@@ -2940,27 +2940,27 @@ async function ticketPage(id, chatId) {
     split.addEventListener('pointerup', up);
   });
   split.addEventListener('dblclick', () => { setSplit(0); try { localStorage.removeItem(splitKey); } catch { /* ignore */ } });
-  // ---- client panel: on the right, or as a strip under the header (Auto: top when the screen is narrow, e.g. portrait)
-  const sidePos = () => { try { return localStorage.getItem('mon.tvSidePos') || 'auto'; } catch { return 'auto'; } };
-  const placeSide = () => {
-    const pos = sidePos();
-    tv.classList.toggle('side-top', pos === 'top' || (pos === 'auto' && tv.clientWidth < 1400));
-    tv.querySelectorAll('[data-side-pos]').forEach((b) => b.classList.toggle('active', b.dataset.sidePos === pos));
+  // ---- Client panel: on the right, or as a strip under the header (Auto: top when the screen is narrow, e.g. portrait)
+  const clientPos = () => { try { return localStorage.getItem('mon.tvSidePos') || 'auto'; } catch { return 'auto'; } };
+  const placeClient = () => {
+    const pos = clientPos();
+    tv.classList.toggle('client-top', pos === 'top' || (pos === 'auto' && tv.clientWidth < 1400));
+    tv.querySelectorAll('[data-client-pos]').forEach((b) => b.classList.toggle('active', b.dataset.clientPos === pos));
   };
-  new ResizeObserver(() => { if (tv.isConnected) placeSide(); }).observe(tv);
-  const sideBar = () => `<div class="tv-side-bar"><span class="seg small" title="Where the client panel sits">${[['auto', 'Auto', 'Top on narrow screens, right on wide ones'], ['top', 'Top', 'Under the ticket header'], ['right', 'Right', 'Beside the preview']].map(([k, l, t]) => `<button type="button" data-side-pos="${k}" title="${t}" class="${sidePos() === k ? 'active' : ''}">${l}</button>`).join('')}</span><button class="btn small" data-side-close title="Hide the client panel">Hide »</button></div>`;
-  const setSide = (on) => { tv.classList.toggle('side-open', on); try { localStorage.setItem('mon.tvSide', on ? 'dock' : 'hide'); } catch { /* ignore */ } };
+  new ResizeObserver(() => { if (tv.isConnected) placeClient(); }).observe(tv);
+  const clientBar = () => `<div class="tv-client-bar"><span class="seg small" title="Where the Client panel sits">${[['auto', 'Auto', 'Top on narrow screens, right on wide ones'], ['top', 'Top', 'Under the ticket header'], ['right', 'Right', 'Beside the Zendesk panel']].map(([k, l, t]) => `<button type="button" data-client-pos="${k}" title="${t}" class="${clientPos() === k ? 'active' : ''}">${l}</button>`).join('')}</span><button class="btn small" data-client-close title="Hide the Client panel">Hide »</button></div>`;
+  const setClient = (on) => { tv.classList.toggle('client-open', on); try { localStorage.setItem('mon.tvSide', on ? 'dock' : 'hide'); } catch { /* ignore */ } };
   tv.addEventListener('click', (e) => {
-    if (e.target.closest('#tvSideTab')) setSide(true);
-    else if (e.target.closest('[data-side-close]')) setSide(false);
-    else if (e.target.closest('[data-side-pos]')) { try { localStorage.setItem('mon.tvSidePos', e.target.closest('[data-side-pos]').dataset.sidePos); } catch { /* ignore */ } placeSide(); }
+    if (e.target.closest('#tvClientTab')) setClient(true);
+    else if (e.target.closest('[data-client-close]')) setClient(false);
+    else if (e.target.closest('[data-client-pos]')) { try { localStorage.setItem('mon.tvSidePos', e.target.closest('[data-client-pos]').dataset.clientPos); } catch { /* ignore */ } placeClient(); }
   });
 
   tvChipsEl = null; // a new ticket: no chips from the previous one
   setTicketModelPicker(null); // and no model picked for another ticket
-  const previewP = renderPreview(tid, $('#tvPreview'), { head: { info: $('#tvHeadInfo'), actions: $('#tvHeadPv'), chips: tvChips() } });
+  const zendeskP = renderZendeskPanel(tid, $('#tvZendesk'), { head: { info: $('#tvHeadInfo'), actions: $('#tvHeadZendesk'), chips: tvChips() } });
 
-  // ---- column 1: the ticket's chat, or an empty Ask AI box (nothing is asked until you click)
+  // ---- column 1: the ticket's chat, or the Chat panel's Ask AI starter (nothing is asked until you click)
   const chatHost = $('#tvChat');
   const sessions = chatId ? [] : await api('/api/sessions').catch(() => []);
   if (!chatHost.isConnected) return;
@@ -2970,7 +2970,7 @@ async function ticketPage(id, chatId) {
     chatPage(sid, { host: chatHost });
   } else {
     chatHost.innerHTML = `<div class="tv-empty">
-      <h2>Ask AI</h2>
+      <h2>Ticket chat</h2>
       <div class="sub">No chat for #${tid} yet. Nothing goes to the assistant until you ask.</div>
       <button class="btn primary" id="tvAsk">Ask AI about #${tid}</button>
       <form class="tv-own" id="tvOwn"><textarea name="q" rows="3" placeholder="Or ask your own question about this ticket, or type / for skills… (Ctrl+Enter)"></textarea><button class="btn">Ask</button></form>
@@ -2978,7 +2978,7 @@ async function ticketPage(id, chatId) {
     const go = async (prompt, skill = null) => {
       chatHost.querySelectorAll('button, textarea').forEach((x) => { x.disabled = true; });
       const enable = () => chatHost.querySelectorAll('button, textarea').forEach((x) => { x.disabled = false; });
-      const d = await previewP;
+      const d = await zendeskP;
       try {
         // An archived chat for this ticket (in the Archive or Deep archive): restore it, or start fresh and delete it.
         const old = (await api('/api/sessions?archived=1').catch(() => [])).filter((x) => Number(x.ticket_id) === tid);
@@ -3017,7 +3017,7 @@ async function ticketPage(id, chatId) {
     own.q.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); own.requestSubmit(); } };
     // "/" lists skills, like the chat box. A skill runs with the ticket number as its first argument
     // (and on that skill's model), e.g. "/check-site-health cqu.edu.au" → "/check-site-health 22925 cqu.edu.au".
-    previewP.then((d) => { if (own.isConnected) attachSkillPicker(own.q, d?.org || null); }).catch(() => {});
+    zendeskP.then((d) => { if (own.isConnected) attachSkillPicker(own.q, d?.org || null); }).catch(() => {});
     own.onsubmit = (e) => {
       e.preventDefault();
       const q = own.q.value.trim();
@@ -3028,17 +3028,17 @@ async function ticketPage(id, chatId) {
     };
   }
 
-  // ---- column 3: the client
-  const d = await previewP;
-  const side = $('#tvSide');
+  // ---- column 3: the Client panel
+  const d = await zendeskP;
+  const side = $('#tvClient');
   if (!side) return;
   const org = d?.org;
-  if (!org || org === 'All') { side.innerHTML = `${sideBar()}<div class="sub">No client linked to this ticket.</div>${CHAT_USAGE_SLOT}`; shapeSide(side); loadChatUsage(state.route.sub); return; }
-  $('#tvSideTab').textContent = org;
+  if (!org || org === 'All') { side.innerHTML = `${clientBar()}<div class="sub">No client linked to this ticket.</div>${CHAT_USAGE_SLOT}`; shapeClient(side); loadChatUsage(state.route.sub); return; }
+  $('#tvClientTab').textContent = org;
   const [info, tickets] = await Promise.all([clientInfo(org), api(`/api/tickets?org=${encodeURIComponent(org)}`).catch(() => [])]);
   if (!side.isConnected) return;
-  side.innerHTML = sideBar() + clientSideHtml(org, info, tickets, tid) + CHAT_USAGE_SLOT;
-  shapeSide(side);
+  side.innerHTML = clientBar() + clientSideHtml(org, info, tickets, tid) + CHAT_USAGE_SLOT;
+  shapeClient(side);
   loadChatUsage(state.route.sub);
   if (!azStatus || Date.now() - new Date(azStatus.checkedAt) > 5 * 60_000) refreshAzureStatus();
 }

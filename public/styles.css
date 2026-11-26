@@ -232,7 +232,7 @@ label.f textarea { padding: 7px 9px; border: 1px solid var(--border); border-rad
 .client-code:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); background: var(--panel); }
 .client-card > label.f { margin-top: 2px; }
 
-/* Ticket preview side panel */
+/* Zendesk panel */
 .drawer-wrap { position: fixed; inset: 0; z-index: 60; }
 .drawer-backdrop { position: absolute; inset: 0; background: rgba(15, 17, 21, .28); }
 .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(720px, 100vw); background: var(--panel); border-left: 1px solid var(--border);
@@ -252,8 +252,8 @@ label.f textarea { padding: 7px 9px; border: 1px solid var(--border); border-rad
 .comment.internal { background: var(--amber-soft); border-color: color-mix(in srgb, var(--amber) 30%, var(--border)); }
 .comment-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
 .comment-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.5; max-height: 360px; overflow-y: auto; }
-.ticket .title[data-preview] { cursor: pointer; }
-.ticket .title[data-preview]:hover { color: var(--accent); }
+.ticket .title[data-ticket-open] { cursor: pointer; }
+.ticket .title[data-ticket-open]:hover { color: var(--accent); }
 
 /* Sidebar chat rows with a delete button */
 .org-sessions .sess-row { display: flex; align-items: center; border-radius: 6px; }
@@ -526,7 +526,7 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 /* tickets I follow / am CC on (not assigned to me) */
 .rel-pill { display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 5px; margin-right: 6px; vertical-align: 1px; background: var(--blue-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); }
 
-/* Preview: update ticket (status + internal note) */
+/* Zendesk panel: update ticket (status + internal note) */
 .tk-update { margin-top: 16px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel-2); display: flex; flex-direction: column; gap: 8px; }
 .tk-update textarea { width: 100%; resize: vertical; min-height: 64px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--border)); border-radius: 8px; background: var(--amber-soft); color: var(--text); font: inherit; font-size: 13px; }
 .tk-update textarea:focus { outline: 2px solid var(--accent-soft); }
@@ -536,7 +536,7 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 
 .rel-pill.mention { background: var(--amber-soft); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, var(--border)); text-transform: none; }
 
-/* Preview update: assignee, tags, followers */
+/* Zendesk panel update: assignee, tags, followers */
 .tk-grid { display: grid; grid-template-columns: 80px 1fr; gap: 8px 10px; align-items: center; }
 .tk-label { font-size: 12px; color: var(--muted); }
 .tk-grid select.select { width: 100%; }
@@ -546,14 +546,14 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tk-chips .chip.locked { padding-right: 9px; }
 .tk-add { padding: 3px 8px; border: 1px dashed var(--border); border-radius: 999px; background: var(--panel); color: var(--text); font-size: 12px; max-width: 180px; }
 
-/* @mention picker in the Preview note */
+/* @mention picker in the Zendesk panel note */
 .tk-note { position: relative; }
 .mention-pop { position: absolute; left: 8px; top: calc(100% - 4px); z-index: 80; min-width: 260px; max-height: 240px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 28px rgba(16,24,40,.18); padding: 4px; }
 .mention-pop .item { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; border-radius: 7px; cursor: pointer; font-size: 13px; }
 .mention-pop .item .sub { font-size: 11px; }
 .mention-pop .item.sel, .mention-pop .item:hover { background: var(--accent-soft); }
 
-/* Preview composer: public reply / internal note, CC, formatting toolbar */
+/* Zendesk panel composer: public reply / internal note, CC, formatting toolbar */
 .tk-compose { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); overflow: visible; }
 .tk-compose.internal { border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); background: var(--amber-soft); }
 .tk-compose-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 8px; border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent); }
@@ -610,7 +610,7 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .rte .atmention::before, .rte-view .atmention::before { content: '@'; }
 .modal-note.rte-view { white-space: normal; max-height: 220px; background: var(--panel-2); }
 
-/* Preview: time tracking */
+/* Zendesk panel: time tracking */
 .tk-timer { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
 .tk-time { border: none; background: none; font: 600 13px var(--mono); color: var(--text); cursor: text; padding: 2px 4px; border-radius: 6px; }
 .tk-time:hover { background: var(--panel-2); }
@@ -619,30 +619,30 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tk-timer.paused .tk-time { color: var(--amber); }
 .tk-timer.off .tk-time { color: var(--muted); text-decoration: line-through; }
 
-.ticket[data-preview] { cursor: pointer; }
-.ticket[data-preview]:hover { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+.ticket[data-ticket-open] { cursor: pointer; }
+.ticket[data-ticket-open]:hover { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
 .select.tk-req, input.tk-req { width: 100%; }
 
-/* ===== Ticket screen: Ask AI · Preview · client ===== */
+/* ===== Ticket workspace: Chat panel · Zendesk panel · Client panel ===== */
 .tv { display: grid; grid-template-columns: minmax(0, 1fr) minmax(420px, .9fr); gap: 16px; height: calc(100vh - 48px); }
-.tv.side-open { grid-template-columns: minmax(0, 1fr) minmax(420px, .9fr) 320px; }
+.tv.client-open { grid-template-columns: minmax(0, 1fr) minmax(420px, .9fr) 320px; }
 .tv-col { min-height: 0; min-width: 0; overflow-y: auto; }
 .tv-chat { display: flex; flex-direction: column; overflow: hidden; }
 .tv-chat .chat-layout { height: 100%; }
 .tv-chat .chat-head h1 { font-size: 15px; }
 .tv-chat .chat-head { flex-wrap: wrap; gap: 8px; }
-.tv-preview { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px 28px; }
-.tv-side { display: none; flex-direction: column; gap: 12px; padding-bottom: 20px; }
-.tv.side-open .tv-side { display: flex; }
-.tv-side .card, .tv-side .side-title, .tv-side-bar { flex: none; }
-.tv-side .card { padding: 12px 14px; overflow: visible; }
-.tv-side h2 { font-size: 13.5px; margin-bottom: 8px; }
-.tv-side .az-actions { gap: 6px; }
-.tv-side-bar { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
-.tv-side-tab { position: fixed; right: 0; top: 38%; z-index: 20; writing-mode: vertical-rl; transform: rotate(180deg); padding: 12px 6px; border: 1px solid var(--border); border-left: none;
+.tv-zendesk { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px 28px; }
+.tv-client { display: none; flex-direction: column; gap: 12px; padding-bottom: 20px; }
+.tv.client-open .tv-client { display: flex; }
+.tv-client .card, .tv-client .side-title, .tv-client-bar { flex: none; }
+.tv-client .card { padding: 12px 14px; overflow: visible; }
+.tv-client h2 { font-size: 13.5px; margin-bottom: 8px; }
+.tv-client .az-actions { gap: 6px; }
+.tv-client-bar { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+.tv-client-tab { position: fixed; right: 0; top: 38%; z-index: 20; writing-mode: vertical-rl; transform: rotate(180deg); padding: 12px 6px; border: 1px solid var(--border); border-left: none;
   border-radius: 0 8px 8px 0; background: var(--panel); color: var(--text); font-weight: 600; font-size: 12px; font-family: inherit; cursor: pointer; box-shadow: 4px 0 14px rgba(16,24,40,.12); }
-.tv-side-tab:hover { color: var(--accent); }
-.tv.side-open .tv-side-tab { display: none; }
+.tv-client-tab:hover { color: var(--accent); }
+.tv.client-open .tv-client-tab { display: none; }
 .side-ticket.current { background: var(--accent-soft); border-radius: 6px; padding-left: 6px; padding-right: 6px; }
 .side-ticket a.link { font-weight: 600; }
 .tv-empty { margin: auto; width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 24px; }
@@ -650,12 +650,12 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tv-own { position: relative; width: 100%; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-top: 8px; }
 .tv-own textarea { width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); font: inherit; font-size: 13px; }
 @media (max-width: 1100px) {
-  .tv, .tv.side-open { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .tv, .tv.client-open { grid-template-columns: minmax(0, 1fr); height: auto; }
   .tv-col { overflow: visible; }
   .tv-chat { height: 80vh; }
 }
 
-/* Preview: status buttons + Category + Submit */
+/* Zendesk panel: status buttons + Category + Submit */
 .tk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tk-actions .tk-cat { flex: 1 1 180px; min-width: 160px; max-width: 300px; }
 .tk-actions #tkSubmit { margin-left: auto; }
@@ -819,7 +819,7 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .main .us-mini td:first-child { min-width: 0; }
 @media (max-width: 900px) { .us-detail-grid { grid-template-columns: 1fr; } }
 
-/* Preview: formatted Zendesk comments, images, attachments */
+/* Zendesk panel: formatted Zendesk comments, images, attachments */
 .comment-html { white-space: normal; }
 .comment-html p { margin: 0 0 8px; }
 .comment-html p:last-child { margin-bottom: 0; }
@@ -860,7 +860,7 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .next-cmd { font-weight: 600; font-size: 13px; font-family: var(--mono); }
 .next-args { font-weight: 400; color: var(--muted); margin-left: 6px; }
 .next-why { font-size: 12px; color: var(--muted); }
-/* ticket screen: the chat never grows wider than its column */
+/* ticket workspace: the chat never grows wider than its column */
 .tv-chat, .tv-chat .chat-layout, .tv-chat .chat, .tv-chat .msgs, .tv-chat .msgs-inner { min-width: 0; max-width: 100%; }
 .tv-chat .chat-layout { width: 100%; }
 .tv-chat .msg.assistant, .tv-chat .worklog { min-width: 0; max-width: 100%; }
@@ -889,21 +889,21 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 @media (max-width: 700px) {
   .us-skill-client-row { grid-template-columns: minmax(0, 1fr); }
 }
-/* Preview: ticket header stays on top while scrolling */
-.pv-sticky { position: sticky; top: -16px; z-index: 6; margin: -16px -18px 0; padding: 14px 18px 2px; background: var(--panel); border-radius: var(--radius) var(--radius) 0 0; transition: box-shadow .15s; }
-.pv-sticky.stuck { box-shadow: 0 6px 12px -8px rgba(16,24,40,.25); border-bottom: 1px solid var(--border); }
-.pv-sticky.stuck .row[style*="margin:8px 0 12px"] { margin: 6px 0 8px !important; }
+/* Zendesk panel: ticket header stays on top while scrolling */
+.zendesk-sticky { position: sticky; top: -16px; z-index: 6; margin: -16px -18px 0; padding: 14px 18px 2px; background: var(--panel); border-radius: var(--radius) var(--radius) 0 0; transition: box-shadow .15s; }
+.zendesk-sticky.stuck { box-shadow: 0 6px 12px -8px rgba(16,24,40,.25); border-bottom: 1px solid var(--border); }
+.zendesk-sticky.stuck .row[style*="margin:8px 0 12px"] { margin: 6px 0 8px !important; }
 /* Long messages: resizable, or Show all / Collapse */
 .comment-body.clipped { resize: vertical; overflow-y: auto; min-height: 80px; transition: height .15s; }
 .comment-expand { margin-left: auto; font-size: 12px; font-weight: 600; }
-@media (max-width: 1100px) { .pv-sticky { top: -24px; } }
-/* ticket screen: chat header chips (instead of repeating the ticket title) */
+@media (max-width: 1100px) { .zendesk-sticky { top: -24px; } }
+/* ticket workspace: chat header chips (instead of repeating the ticket title) */
 .chat-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .chat-chips .client-badge { width: auto; min-width: 44px; height: 26px; padding: 0 8px; font-size: 11.5px; }
 .pill.ai { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); font-weight: 600; }
 .pill.cost { background: var(--green-soft); color: var(--green); border-color: color-mix(in srgb, var(--green) 30%, var(--border)); font-weight: 600; }
 .tv-chat .chat-head { align-items: center; }
-/* Ticket screen: one header for the ticket (left) and its chat + preview controls (right) */
+/* Ticket workspace: one header for the ticket (left) and its Chat panel + Zendesk panel controls (right) */
 .tv { grid-template-rows: auto minmax(0, 1fr); }
 .tv > .tv-col { grid-row: 2; }
 .tv-head { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; }
@@ -916,8 +916,8 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tvh-chat { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .tvh-chat:empty { display: none; }
 .tvh-chat > .row { gap: 6px; }
-.tvh-chat:not(:empty) + .tvh-pv { padding-left: 10px; border-left: 1px solid var(--border); }
-.tvh-pv { display: flex; align-items: center; gap: 6px; }
+.tvh-chat:not(:empty) + .tvh-zendesk { padding-left: 10px; border-left: 1px solid var(--border); }
+.tvh-zendesk { display: flex; align-items: center; gap: 6px; }
 .tvh-chips { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--border); }
 .tvh-chips:empty { display: none; }
 /* ⋯ menu (chat actions) */
@@ -933,14 +933,14 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tvh-chat .model-pick { font-size: 12px; color: var(--muted); }
 .tvh-chat .model-pick select { max-width: 190px; }
 @media (max-width: 1100px) { .tv > .tv-col { grid-row: auto; } .tv-head { flex-wrap: wrap; } }
-/* Ticket screen: chat | divider | preview | client — the divider is draggable */
+/* Ticket workspace: Chat panel | divider | Zendesk panel | Client panel — the divider is draggable */
 .tv { grid-template-columns: minmax(280px, var(--chat-fr, 1.1fr)) 12px minmax(360px, 1fr); column-gap: 2px; }
-.tv.side-open { grid-template-columns: minmax(280px, var(--chat-fr, 1.1fr)) 12px minmax(360px, 1fr) 320px; column-gap: 2px; }
-.tv.side-open > .tv-side { margin-left: 14px; }
+.tv.client-open { grid-template-columns: minmax(280px, var(--chat-fr, 1.1fr)) 12px minmax(360px, 1fr) 320px; column-gap: 2px; }
+.tv.client-open > .tv-client { margin-left: 14px; }
 .tv > .tv-chat { grid-column: 1; }
 .tv > .tv-split { grid-column: 2; grid-row: 2; }
-.tv > .tv-preview { grid-column: 3; }
-.tv > .tv-side { grid-column: 4; }
+.tv > .tv-zendesk { grid-column: 3; }
+.tv > .tv-client { grid-column: 4; }
 .tv-split { position: relative; cursor: col-resize; touch-action: none; }
 .tv-split::before { content: ''; position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; border-radius: 2px; background: transparent; transition: background .15s; }
 .tv-split::after { content: ''; position: absolute; top: 50%; left: 3px; width: 6px; height: 36px; margin-top: -18px; border-radius: 4px; background: var(--border); }
@@ -949,10 +949,10 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tv.resizing { cursor: col-resize; user-select: none; }
 .tv.resizing iframe, .tv.resizing .tv-col { pointer-events: none; }
 @media (max-width: 1100px) {
-  .tv, .tv.side-open { grid-template-columns: minmax(0, 1fr); }
-  .tv > .tv-chat, .tv > .tv-preview, .tv > .tv-side { grid-column: 1; }
+  .tv, .tv.client-open { grid-template-columns: minmax(0, 1fr); }
+  .tv > .tv-chat, .tv > .tv-zendesk, .tv > .tv-client { grid-column: 1; }
   .tv > .tv-split { display: none; }
-  .tv.side-open > .tv-side { margin-left: 0; }
+  .tv.client-open > .tv-client { margin-left: 0; }
 }
 /* ↻ Zendesk next to Send */
 .composer-row .zd-refresh { flex: none; align-self: flex-end; white-space: nowrap; }
@@ -960,7 +960,7 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .pill.assignee { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .pill.assignee.me { background: var(--accent-soft); color: var(--accent); }
 .menu-wrap > .menu button:disabled { opacity: .45; cursor: default; background: none; }
-/* ⤢ big editor popup (the Preview's composer, moved to the middle of the page) */
+/* ⤢ big editor popup (the Zendesk panel's composer, moved to the middle of the page) */
 .big-compose-wrap { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 24px; background: rgba(15, 17, 21, .45); backdrop-filter: blur(2px); animation: md-fade .12s ease-out; }
 .big-compose { width: min(1100px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 24px 60px rgba(16,24,40,.35); padding: 14px 16px; animation: md-pop .14s ease-out; }
 .big-compose-head { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1056,7 +1056,7 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .us-apps > .sub:last-child { flex: 1 1 280px; font-size: 12px; }
 .pill.us-app { font-size: 10.5px; margin-left: 4px; background: var(--blue-soft); color: var(--accent); }
 
-/* Images pasted into the Preview's reply / note editor (uploaded to Zendesk, sent inline) */
+/* Images pasted into the Zendesk panel's reply / note editor (uploaded to Zendesk, sent inline) */
 .rte-img, .rte-view img { max-width: 100%; max-height: 320px; border-radius: 6px; border: 1px solid var(--border, #e5e7eb); vertical-align: middle; margin: 4px 0; }
 .rte-img.uploading { opacity: .45; outline: 2px dashed var(--accent, #2563eb); outline-offset: 2px; animation: rte-up 1s ease-in-out infinite alternate; }
 @keyframes rte-up { to { opacity: .8; } }
@@ -1090,20 +1090,20 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .layout.nav-resizing { cursor: col-resize; user-select: none; }
 .layout.nav-resizing iframe, .layout.nav-resizing .main { pointer-events: none; }
 .seg.small button { padding: 2px 8px; font-size: 12px; }
-.tv-side-bar { justify-content: space-between; }
-/* Ticket view: client panel = head + cards; right column or a strip under the header */
-.tv-side-head { display: flex; flex-direction: column-reverse; gap: 10px; flex: none; }
-.tv-side-cards { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tv-client-bar { justify-content: space-between; }
+/* Ticket workspace: Client panel = head + cards; right column or a strip under the header */
+.tv-client-head { display: flex; flex-direction: column-reverse; gap: 10px; flex: none; }
+.tv-client-cards { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 @media (min-width: 1101px) {
-  .tv.side-open.side-top { grid-template-columns: minmax(280px, var(--chat-fr, 1.1fr)) 12px minmax(360px, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
-  .tv.side-top > .tv-col, .tv.side-top > .tv-split { grid-row: 3; }
-  .tv.side-open.side-top > .tv-side { grid-row: 2; grid-column: 1 / -1; margin-left: 0; overflow: visible; padding-bottom: 0; gap: 8px; }
-  .tv.side-top .tv-side-head { flex-direction: row; align-items: center; justify-content: space-between; }
-  .tv.side-top .tv-side-head .side-title { font-size: 14px; }
-  .tv.side-top .tv-side-bar { margin-left: auto; }
-  .tv.side-top .tv-side-cards { flex-direction: row; overflow-x: auto; padding-bottom: 6px; align-items: stretch; }
-  .tv.side-top .tv-side-cards > * { flex: 1 0 250px; max-width: 420px; max-height: 210px; overflow-y: auto; }
-  .tv.side-top .tv-side-cards > [hidden] { display: none; }
+  .tv.client-open.client-top { grid-template-columns: minmax(280px, var(--chat-fr, 1.1fr)) 12px minmax(360px, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+  .tv.client-top > .tv-col, .tv.client-top > .tv-split { grid-row: 3; }
+  .tv.client-open.client-top > .tv-client { grid-row: 2; grid-column: 1 / -1; margin-left: 0; overflow: visible; padding-bottom: 0; gap: 8px; }
+  .tv.client-top .tv-client-head { flex-direction: row; align-items: center; justify-content: space-between; }
+  .tv.client-top .tv-client-head .side-title { font-size: 14px; }
+  .tv.client-top .tv-client-bar { margin-left: auto; }
+  .tv.client-top .tv-client-cards { flex-direction: row; overflow-x: auto; padding-bottom: 6px; align-items: stretch; }
+  .tv.client-top .tv-client-cards > * { flex: 1 0 250px; max-width: 420px; max-height: 210px; overflow-y: auto; }
+  .tv.client-top .tv-client-cards > [hidden] { display: none; }
 }
 /* Usage: rows of equal-height cards; tables fill the row height and scroll inside */
 #usTables { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
