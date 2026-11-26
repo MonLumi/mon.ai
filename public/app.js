@@ -1402,18 +1402,18 @@ async function refreshDashboard() {
 }
 const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-/** Dashboard: agents in my groups this week (from Monday): time logged, open tickets in their queue, resolved. */
+/** Dashboard: agents active this week (from Monday): time logged, open tickets in their queue, resolved. */
 function drawByAssignee(team) {
   const el = $('#byAssignee');
   if (!el) return;
-  if (!team?.agents?.length) { el.innerHTML = '<div class="sub">Loads after the next sync.</div>'; return; }
+  if (!team?.agents?.length) { el.innerHTML = `<div class="sub">${team ? 'No time logged or tickets resolved yet this week.' : 'Loads after the next sync.'}</div>`; return; }
   const list = [...team.agents].sort((a, b) => b.seconds - a.seconds || (b.resolved || 0) - (a.resolved || 0) || (b.open || 0) - (a.open || 0));
   const maxSec = Math.max(1, ...list.map((a) => a.seconds));
   el.innerHTML = `<table class="assignees"><tr><th>Assignee</th><th class="num" title="Time Tracking: time logged since Monday">Time logged</th><th class="num" title="Open tickets in their queue (new, open, pending, on hold)">In queue</th><th class="num" title="Tickets assigned to them, solved since Monday">Resolved</th></tr>${list.map((a) => `<tr class="${a.me ? 'me' : ''}">
       <td>${esc(a.name)}${a.me ? ' <span class="sub">(you)</span>' : ''}</td>
       <td class="num">${a.seconds ? fmtDuration(a.seconds) : '–'}<div class="logbar" style="width:${(a.seconds / maxSec) * 100}%;${a.seconds ? '' : 'visibility:hidden'}"></div></td>
       <td class="num">${a.open ?? '–'}</td><td class="num">${a.resolved ?? '–'}</td></tr>`).join('')}</table>
-    <div class="sub" style="margin-top:6px">Agents in your groups, since Monday${team.timeTracked ? '' : ' (Time Tracking fields not found, so no time logged)'} · updated ${ago(team.checkedAt)}, every 10 min.</div>`;
+    <div class="sub" style="margin-top:6px">Everyone with time logged or a ticket resolved since Monday${team.timeTracked ? '' : ' (Time Tracking fields not found, so no time logged)'} · updated ${ago(team.checkedAt)}, every 10 min.</div>`;
 }
 
 // ---------- static data cache (client settings, Cloudflare zones, repos) ----------
