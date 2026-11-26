@@ -516,7 +516,7 @@ function ticketRow(t) {
     </div>
     <div class="actions">
       <button class="btn small upvote ${t.upvoted ? 'active' : ''}" data-upvote="${t.id}" data-on="${t.upvoted ? 0 : 1}" title="${t.upvoted ? 'Remove from your focus list' : 'Upvote to focus on this ticket'}">👀 ${t.upvoted ? 'Upvoted' : 'Upvote'}</button>
-      ${t.needs_me || t.relation === 'unassigned' || t.chat_cooled ? `<button class="btn small" data-ignore="${t.id}" data-on="${t.ignored ? 0 : 1}" title="${t.ignored ? `Back to Needs you now${t.chat_cooled ? ' (also ends the chat cooldown)' : ''}` : t.relation === 'unassigned' && !t.needs_me ? 'Park it in Cooling down until something new happens on it' : 'Park it in Cooling down until you are mentioned again or you comment'}">${t.ignored ? 'Warm up' : 'Cool down'}</button>` : ''}
+      ${t.needs_me || t.relation === 'unassigned' || t.chat_cooled ? `<button class="btn small" data-ignore="${t.id}" data-on="${t.ignored ? 0 : 1}" title="${t.ignored ? `Back to Open${t.chat_cooled ? ' (also ends the chat cooldown)' : ''}` : t.relation === 'unassigned' && !t.needs_me ? 'Park it in Cooled until something new happens on it' : 'Park it in Cooled until you are mentioned again or you comment'}">${t.ignored ? 'Warm up' : 'Cool down'}</button>` : ''}
     </div>
   </div>`;
 }
@@ -542,7 +542,7 @@ const onTicketAction = async (e) => {
   if (ig) {
     try {
       await api(`/api/tickets/${ig.dataset.ignore}/ignore`, { method: 'POST', body: { ignore: ig.dataset.on === '1' } });
-      toast(ig.dataset.on === '1' ? `#${ig.dataset.ignore} cooling down` : `#${ig.dataset.ignore} back in Needs you`);
+      toast(ig.dataset.on === '1' ? `#${ig.dataset.ignore} cooling down` : `#${ig.dataset.ignore} back in Open`);
       refreshDashboard().catch(() => {});
       if (state.route.name === 'org') refreshOrgLive(state.route.id);
     } catch (err) { toast(err.message); }
@@ -1311,16 +1311,19 @@ function drawQueue(tickets, byMe = [], resolved = []) {
   let tab = lsGet('mon.queueTab', 'action');
   const sort = lsGet('mon.queueSort', 'score');
   const inQueue = tickets.filter(inFocus);
+  // Left to right: Open · Pending · Cooled · My activity · Solved · All. Keys stay as before so a remembered tab still works.
   const groups = {
-    action: { label: 'Needs you', list: inQueue.filter((t) => !t.ignored && (!isMine(t) || statusOf(t).group === 'action')) },
-    waiting: { label: 'Waiting', list: inQueue.filter((t) => isMine(t) && statusOf(t).group === 'waiting') },
-    ignored: { label: 'Cooling down', list: tickets.filter((t) => t.ignored) },
-    mine: { label: 'Updated by me', list: byMe },
-    all: { label: 'All', list: inQueue },
-    done: { label: 'Solved / Closed', list: resolved },
+    action: { label: 'Open', tip: 'New and open tickets waiting on you, plus unassigned ones and mentions', list: inQueue.filter((t) => !t.ignored && (!isMine(t) || statusOf(t).group === 'action')) },
+    waiting: { label: 'Pending', tip: 'Your tickets waiting on the customer (pending) or a third party (on hold)', list: inQueue.filter((t) => isMine(t) && statusOf(t).group === 'waiting') },
+    ignored: { label: 'Cooled', tip: 'Tickets you cooled down: back in Open when something new happens on them', list: tickets.filter((t) => t.ignored) },
+    mine: { label: 'My activity', tip: 'Tickets where you made the latest update in the last 24 hours', list: byMe },
+    done: { label: 'Solved', tip: 'Solved and closed tickets, newest first', list: resolved },
+    all: { label: 'All', tip: 'Open, Pending, Cooled and Solved together', list: [] },
   };
+  const allSections = [['Open', groups.action.list], ['Pending · waiting on customer / third party', groups.waiting.list], ['Cooled', groups.ignored.list], ['Solved / Closed', groups.done.list]];
+  groups.all.list = [...new Map(allSections.flatMap(([, l]) => l).map((t) => [t.id, t])).values()];
   $('#queueTabs').innerHTML = Object.entries(groups).map(([k, g]) =>
-    `<button class="${k === tab ? 'active' : ''}" data-qtab="${k}">${g.label} <span class="count">${g.list.length}</span></button>`).join('');
+    `<button class="${k === tab ? 'active' : ''}" data-qtab="${k}" title="${esc(g.tip)}">${g.label} <span class="count">${g.list.length}</span></button>`).join('');
   $('#queueTabs').onclick = (e) => {
     const b = e.target.closest('[data-qtab]');
     if (!b) return;
@@ -1338,17 +1341,15 @@ function drawQueue(tickets, byMe = [], resolved = []) {
   };
   if (!groups[tab]) tab = 'action'; // e.g. the removed Following tab was remembered
   const list = groups[tab].list;
-  const empty = { action: 'Nothing is waiting on you. 🎉', waiting: 'No tickets are waiting on customers.', ignored: 'Nothing cooling down. Cool down parks a mentioned ticket until you are mentioned again, or an unassigned one until something new happens on it. A ticket whose chat you cooled down (⋯ menu) waits here until someone else updates it.', mine: 'No tickets where you made the latest update in the last 24 hours.', all: 'No open tickets.', done: 'No solved or closed tickets synced yet. Tickets you solve, or that you follow and get solved, show here.' }[tab];
+  const empty = { action: 'Nothing is waiting on you. 🎉', waiting: 'No tickets are waiting on customers.', ignored: 'Nothing cooling down. Cool down parks a mentioned ticket until you are mentioned again, or an unassigned one until something new happens on it. A ticket whose chat you cooled down (⋯ menu) waits here until someone else updates it.', mine: 'No tickets where you made the latest update in the last 24 hours.', all: 'No tickets.', done: 'No solved or closed tickets synced yet. Tickets you solve, or that you follow and get solved, show here.' }[tab];
   if (!list.length) { $('#queue').innerHTML = `<div class="empty">${empty}</div>`; return; }
   if (tab === 'action') {
     const fresh = list.filter((t) => t.relation === 'unassigned'), rest = list.filter((t) => t.relation !== 'unassigned');
     $('#queue').innerHTML = (fresh.length ? `<div class="queue-head">New · unassigned · ${fresh.length}</div>${queueRows(fresh, sort)}` : '')
       + (rest.length ? `${fresh.length ? `<div class="queue-head">Your queue · ${rest.length}</div>` : ''}${queueRows(rest, sort, 40)}` : '');
   } else if (tab === 'all') {
-    // Keep the two kinds visually apart: everything that needs me first, then the waiting ones.
-    const a = groups.action.list, w = groups.waiting.list;
-    $('#queue').innerHTML = (a.length ? `<div class="queue-head">Needs you · ${a.length}</div>${queueRows(a, sort)}` : '')
-      + (w.length ? `<div class="queue-head">Waiting on customer / third party · ${w.length}</div>${queueRows(w, sort)}` : '');
+    // One section per tab, in tab order, so the kinds stay visually apart.
+    $('#queue').innerHTML = allSections.filter(([, l]) => l.length).map(([h, l]) => `<div class="queue-head">${h} · ${l.length}</div>${queueRows(l, sort, 200)}`).join('');
   } else {
     $('#queue').innerHTML = queueRows(list, sort, tab === 'mine' || tab === 'done' ? 200 : 40);
   }
@@ -2887,7 +2888,7 @@ async function drawNoChatHead(tid) {
     <span class="menu-wrap"><button class="btn small" id="chatMenuBtn" aria-haspopup="menu" aria-expanded="false" title="More actions">⋯</button>
       <div class="menu" id="chatMenu" role="menu" hidden>
         <button role="menuitem" data-act="upvote" title="${upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>
-        <button role="menuitem" data-act="cooldown" title="${cooled ? 'Back to Needs you now' : 'Park it in the Dashboard\'s Cooling down tab until someone else updates it'}">${cooled ? '☀ End cooldown' : '❄ Cooldown'}</button>
+        <button role="menuitem" data-act="cooldown" title="${cooled ? 'Back to Open' : 'Park it in the Dashboard\'s Cooled tab until someone else updates it'}">${cooled ? '☀ End cooldown' : '❄ Cooldown'}</button>
         <button role="menuitem" data-act="skill" disabled ${noChat}>＋ Create skill from chat</button>
         <hr>
         <button role="menuitem" data-act="delete" class="danger" disabled ${noChat}>🗑 Delete</button>
@@ -2901,7 +2902,7 @@ async function drawNoChatHead(tid) {
         drawNoChatHead(tid);
       } else if (act === 'cooldown') {
         await api(`/api/tickets/${tid}/ignore`, { method: 'POST', body: { ignore: !cooled } });
-        toast(cooled ? `#${tid} back in Needs you` : `#${tid} cooling down: back when someone else updates it`);
+        toast(cooled ? `#${tid} back in Open` : `#${tid} cooling down: back when someone else updates it`);
         drawNoChatHead(tid);
       }
     } catch (err) { toast(err.message); }
