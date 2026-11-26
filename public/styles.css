@@ -23,7 +23,7 @@ body { background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", sy
 a { color: var(--accent); text-decoration: none; }
 button, input, select, textarea { font: inherit; color: inherit; }
 
-.layout { display: grid; grid-template-columns: 250px 1fr; height: 100vh; }
+.layout { display: grid; grid-template-columns: var(--nav-w, 250px) 1fr; height: 100vh; }
 .sidebar { background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
 .brand { font-size: 20px; font-weight: 700; color: var(--text); padding: 18px 18px 10px; }
 .brand span { color: var(--accent); }
@@ -1050,3 +1050,77 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .us-apps:empty { display: none; }
 .us-apps > .sub:last-child { flex: 1 1 280px; font-size: 12px; }
 .pill.us-app { font-size: 10.5px; margin-left: 4px; background: var(--blue-soft); color: var(--accent); }
+
+/* Images pasted into the Preview's reply / note editor (uploaded to Zendesk, sent inline) */
+.rte-img, .rte-view img { max-width: 100%; max-height: 320px; border-radius: 6px; border: 1px solid var(--border, #e5e7eb); vertical-align: middle; margin: 4px 0; }
+.rte-img.uploading { opacity: .45; outline: 2px dashed var(--accent, #2563eb); outline-offset: 2px; animation: rte-up 1s ease-in-out infinite alternate; }
+@keyframes rte-up { to { opacity: .8; } }
+
+/* Archive / Deep archive rows: Restore and Delete forever on the right */
+.chat-row.bin-row { display: flex; align-items: center; gap: 10px; }
+.chat-row.bin-row .t { flex: 1; min-width: 0; }
+.bin-acts { display: inline-flex; gap: 6px; flex-shrink: 0; }
+.bin-acts .btn.danger { color: var(--red); }
+.chat-row.bin-row .t { flex: 1 1 30%; }
+.chat-row.bin-row .sub { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Usage board: tables column + pies column, each stacks on its own (no row-coupled gaps) */
+.us-board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 27%); gap: 14px; align-items: start; min-width: 0; }
+.us-main, .us-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.us-side > .us-dimension, .us-main > .us-table { max-width: none; width: 100%; }
+.us-board .us-dimension[data-dimension] .us-visual { flex: none; justify-content: flex-start; }
+.us-board .us-dimension[data-dimension] .us-pie { flex: none; height: auto; max-height: 300px; }
+.us-kpis { display: flex; flex-wrap: wrap; align-content: stretch; }
+.us-kpis > * { flex: 1 1 130px; min-width: 0; }
+@media (max-width: 1300px) {
+  .us-board { grid-template-columns: minmax(0, 1fr); }
+  .us-side { order: -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: stretch; }
+  .us-board .us-dimension[data-dimension] .us-pie { max-height: 240px; }
+}
+
+/* Left sidebar: drag its right edge to resize */
+.sidebar { position: relative; min-width: 0; }
+.nav-resize { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 6; touch-action: none; }
+.nav-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background .15s; }
+.nav-resize:hover::after, .nav-resizing .nav-resize::after { background: var(--accent); }
+.layout.nav-resizing { cursor: col-resize; user-select: none; }
+.layout.nav-resizing iframe, .layout.nav-resizing .main { pointer-events: none; }
+.seg.small button { padding: 2px 8px; font-size: 12px; }
+.tv-side-bar { justify-content: space-between; }
+/* Ticket view: client panel = head + cards; right column or a strip under the header */
+.tv-side-head { display: flex; flex-direction: column-reverse; gap: 10px; flex: none; }
+.tv-side-cards { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+@media (min-width: 1101px) {
+  .tv.side-open.side-top { grid-template-columns: minmax(280px, var(--chat-fr, 1.1fr)) 12px minmax(360px, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+  .tv.side-top > .tv-col, .tv.side-top > .tv-split { grid-row: 3; }
+  .tv.side-open.side-top > .tv-side { grid-row: 2; grid-column: 1 / -1; margin-left: 0; overflow: visible; padding-bottom: 0; gap: 8px; }
+  .tv.side-top .tv-side-head { flex-direction: row; align-items: center; justify-content: space-between; }
+  .tv.side-top .tv-side-head .side-title { font-size: 14px; }
+  .tv.side-top .tv-side-bar { margin-left: auto; }
+  .tv.side-top .tv-side-cards { flex-direction: row; overflow-x: auto; padding-bottom: 6px; align-items: stretch; }
+  .tv.side-top .tv-side-cards > * { flex: 1 0 250px; max-width: 420px; max-height: 210px; overflow-y: auto; }
+  .tv.side-top .tv-side-cards > [hidden] { display: none; }
+}
+/* Usage: rows of equal-height cards; tables fill the row height and scroll inside */
+#usTables { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
+.us-colstack > * { width: 100%; }
+.us-row { display: grid; gap: 14px; align-items: stretch; min-width: 0; }
+.us-row-top { grid-template-columns: minmax(0, 2.6fr) minmax(300px, 1fr); }
+.us-row-bottom { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.us-row > .us-wide { grid-column: auto; }
+.us-colstack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.us-colstack > .card { flex: 1 1 auto; }
+.us-row .card { min-width: 0; max-width: none; width: auto; }
+.us-fillcard { display: flex; flex-direction: column; }
+.us-fillcard > .us-table-scroll { flex: 1 1 auto; contain: size; min-height: 340px; max-height: none; }
+.us-colstack .us-fillcard > .us-table-scroll { min-height: 150px; }
+.us-row-top .us-fillcard > .us-table-scroll { min-height: 380px; }
+.us-row .us-dimension .us-visual { flex: 1 1 auto; justify-content: center; }
+.us-row .us-dimension .us-pie { flex: none; height: auto; max-height: 300px; }
+/* By chat: long titles wrap instead of being cut off */
+.us-wide .us-name { max-width: none; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+.us-table:not(.us-wide) .us-name a { overflow-wrap: normal; }
+@media (max-width: 900px) { .us-row-top { grid-template-columns: minmax(0, 1fr); } .us-row-bottom { grid-auto-flow: row; } }
+/* Client panel: one Infrastructure card (Azure & DevOps + Cloudflare) */
+.infra-sub { margin: 10px 0 6px; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.infra-card h2 + .infra-sub { margin-top: 0; }
+.infra-card .infra-sub:not(:first-of-type) { padding-top: 10px; border-top: 1px solid var(--border); }

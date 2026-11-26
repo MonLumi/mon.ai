@@ -35,7 +35,7 @@ app.use((req, res, next) => {
     if (req.headers['sec-fetch-site'] === 'cross-site') return res.status(403).json({ error: 'Cross-site request refused' });
     // POST/PUT must be JSON (an HTML form can't send that). DELETE has no body and forms can't send it.
     // Uploads are raw bytes (application/octet-stream, which a cross-site form can't send either).
-    const upload = /^\/api\/sessions\/[^/]+\/uploads$/.test(req.path) && req.is('application/octet-stream');
+    const upload = /^\/api\/(sessions\/[^/]+\/uploads|zendesk\/uploads)$/.test(req.path) && req.is('application/octet-stream');
     if (req.method !== 'DELETE' && !upload && !req.is('application/json')) return res.status(415).json({ error: 'JSON only' });
   }
   next();
@@ -132,8 +132,11 @@ app.post('/api/tickets/:id/update', wrap((req) => {
     addFollowers: b.addFollowers,
     timeSpent: b.timeSpent,
     fields: b.fields,
+    uploads: b.uploads,
   });
 }));
+// An image pasted into the Preview editor goes to Zendesk's Uploads API; Submit attaches it by its token.
+app.post('/api/zendesk/uploads', express.raw({ type: 'application/octet-stream', limit: '20mb' }), wrap((req) => zendesk.uploadFile(String(req.query.name || 'image.png'), String(req.query.type || ''), req.body)));
 app.post('/api/tickets/:id/ignore', wrap((req) => zendesk.setIgnored(Number(req.params.id), !!req.body.ignore)));
 app.post('/api/tickets/:id/upvote', wrap((req) => {
   const id = Number(req.params.id);
@@ -250,7 +253,8 @@ app.post('/api/sessions/:id/unarchive', wrap((req) => assistant.unarchiveSession
 app.post('/api/sessions/:id/cooldown', wrap((req) => assistant.setCooldown(req.params.id, req.body.on !== false)));
 app.post('/api/sessions', wrap((req) => assistant.createSession({ org: req.body.org ? orgCode(req.body.org) : 'All', title: req.body.title, ticketId: req.body.ticketId })));
 app.get('/api/sessions/:id', wrap((req) => assistant.getSession(req.params.id) || Promise.reject(new Error('Not found'))));
-app.delete('/api/sessions/:id', wrap((req) => assistant.deleteSession(req.params.id)));
+// Delete = move to the Archive (recycle bin). ?forever=1 deletes an archived chat for good.
+app.delete('/api/sessions/:id', wrap((req) => (req.query.forever === '1' ? assistant.deleteForever(req.params.id) : assistant.trashSession(req.params.id))));
 app.post('/api/sessions/:id/stop', wrap((req) => assistant.stop(req.params.id)));
 app.get('/api/sessions/:id/ticket-updates', wrap((req) => assistant.ticketUpdates(req.params.id)));
 app.post('/api/sessions/:id/ticket-seen', wrap((req) => assistant.markTicketSeen(req.params.id, typeof req.body.at === 'string' ? req.body.at : undefined)));

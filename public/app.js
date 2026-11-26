@@ -75,7 +75,7 @@ async function loadSidebar() {
       : back ? `${s.title}\nBack from cooldown: the ticket has a new update` : s.title;
     const tag = manual ? '❄' : s.ticket_status === 'hold' ? 'hold' : 'pending';
     return `<div class="sess-row ${isActive(s) ? 'active' : ''} ${cool ? 'cool' : ''} ${back ? 'back' : ''}">${back ? '<span class="sess-dot" aria-label="New update"></span>' : ''}<a href="#/chat/${s.id}" title="${esc(tip)}">${esc(s.title)}</a>${cool ? `<span class="sess-cool" title="${esc(tip)}">${tag}</span>` : ''}
-      <button class="sess-del" data-del-session="${s.id}" title="Delete chat" aria-label="Delete chat ${esc(s.title)}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg></button></div>`;
+      <button class="sess-del" data-del-session="${s.id}" title="Delete (moves it to the Archive)" aria-label="Delete chat ${esc(s.title)}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg></button></div>`;
   }).join('');
   $('#orgList').innerHTML = [
     general.length ? `<div class="org"><div class="org-row" data-toggle="All"><span class="caret">${state.expanded.has('All') ? '▾' : '▸'}</span><span class="name">General chats</span><span class="count">${general.length}</span></div>
@@ -150,21 +150,15 @@ function visibleOrgs() {
   return state.orgs.filter((o) => o.open > 0 || recent.has(o.org) || (state.route.name === 'org' && state.route.id === o.org));
 }
 $('#orgList').addEventListener('click', async (e) => {
-  // Delete a chat: first click arms the button ("Delete?"), a second click within 3 s deletes.
+  // Delete a chat: moves it to the Archive (the recycle bin), where Restore brings it back.
   const del = e.target.closest('[data-del-session]');
   if (del) {
     e.preventDefault();
     e.stopPropagation();
-    if (!del.classList.contains('armed')) {
-      del.classList.add('armed');
-      del.title = 'Click again to delete';
-      setTimeout(() => { del.classList.remove('armed'); del.title = 'Delete chat'; }, 3000);
-      return;
-    }
     const id = del.dataset.delSession;
     try {
       await api(`/api/sessions/${id}`, { method: 'DELETE' });
-      toast('Chat deleted');
+      toast('Moved to the Archive (Assistant › Archive to restore)');
       if (state.route.name === 'chat' && state.route.id === id) location.hash = '#/chat';
       else if (state.route.name === 'ticket' && state.route.sub === id) location.hash = `#/ticket/${state.route.id}`;
       else loadSidebar();
@@ -190,6 +184,31 @@ const setNav = (hidden) => {
 try { if (localStorage.getItem('mon.nav') === 'hide') $('#layout').classList.add('nav-hidden'); } catch { /* ignore */ }
 $('#navHide').onclick = () => setNav(true);
 $('#navShow').onclick = () => setNav(false);
+// Left sidebar width: drag its right edge (remembered); dragging it nearly shut hides it.
+(() => {
+  const layout = $('#layout'), grip = $('#navResize');
+  const setW = (w) => { if (w) layout.style.setProperty('--nav-w', `${w}px`); else layout.style.removeProperty('--nav-w'); };
+  try { setW(Number(localStorage.getItem('mon.navW')) || 0); } catch { /* ignore */ }
+  if (!grip) return;
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { grip.setPointerCapture(e.pointerId); } catch { /* lost pointer */ }
+    const left = layout.getBoundingClientRect().left;
+    let w = null, raw = null;
+    layout.classList.add('nav-resizing');
+    const move = (ev) => { raw = ev.clientX - left; w = Math.round(Math.min(440, Math.max(170, raw))); setW(w); };
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      layout.classList.remove('nav-resizing');
+      if (raw !== null && raw < 110) { setNav(true); return; }
+      if (w) try { localStorage.setItem('mon.navW', String(w)); } catch { /* ignore */ }
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+  });
+  grip.addEventListener('dblclick', () => { setW(0); try { localStorage.removeItem('mon.navW'); } catch { /* ignore */ } });
+})();
 $('#newChatBtn').onclick = () => newChat(state.route.name === 'org' ? state.route.id : null);
 
 async function loadClaudeBadge() {
@@ -248,7 +267,7 @@ async function newChat(org, opts = {}) {
  * Centered dialog over a dimmed page. rows: [[label, html]] listing what will happen.
  * Resolves true for OK, false for Cancel / Esc / clicking outside.
  */
-function confirmDialog({ title, intro = '', rows = [], ok = 'OK', cancel = 'Cancel', danger = false }) {
+function confirmDialog({ title, intro = '', rows = [], ok = 'OK', cancel = 'Cancel', danger = false, choices = null }) {
   return new Promise((resolve) => {
     const wrap = document.createElement('div');
     wrap.className = 'modal-wrap';
@@ -256,7 +275,9 @@ function confirmDialog({ title, intro = '', rows = [], ok = 'OK', cancel = 'Canc
       <h2 id="mdTitle">${esc(title)}</h2>
       ${intro ? `<div class="modal-intro">${intro}</div>` : ''}
       ${rows.length ? `<dl class="modal-rows">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>` : ''}
-      <div class="modal-actions"><button class="btn" data-md="0">${esc(cancel)}</button><button class="btn ${danger ? 'danger-solid' : 'primary'}" data-md="1">${esc(ok)}</button></div>
+      <div class="modal-actions"><button class="btn" data-md="0">${esc(cancel)}</button>${choices
+        ? choices.map((c) => `<button class="btn ${c.cls || ''}" data-md="${esc(c.value)}" ${c.title ? `title="${esc(c.title)}"` : ''}>${esc(c.label)}</button>`).join('')
+        : `<button class="btn ${danger ? 'danger-solid' : 'primary'}" data-md="1">${esc(ok)}</button>`}</div>
     </div>`;
     const prev = document.activeElement;
     const done = (v) => { document.removeEventListener('keydown', key, true); wrap.remove(); prev?.focus?.(); resolve(v); };
@@ -270,10 +291,10 @@ function confirmDialog({ title, intro = '', rows = [], ok = 'OK', cancel = 'Canc
       }
     };
     wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) done(false); });
-    wrap.addEventListener('click', (e) => { const b = e.target.closest('[data-md]'); if (b) done(b.dataset.md === '1'); });
+    wrap.addEventListener('click', (e) => { const b = e.target.closest('[data-md]'); if (b) done(choices ? (b.dataset.md === '0' ? false : b.dataset.md) : b.dataset.md === '1'); });
     document.addEventListener('keydown', key, true);
     document.body.append(wrap);
-    wrap.querySelector('[data-md="1"]').focus();
+    (choices ? wrap.querySelector('.modal-actions .btn:nth-child(2)') : wrap.querySelector('[data-md="1"]')).focus();
   });
 }
 
@@ -306,21 +327,39 @@ function rteToolbar() {
     ${b('removeFormat', 'Clear formatting', ICON('M6 5h12v3h-2V7h-3.2l-1.6 4.6-1.6-1.6L10.6 7H8v1H6zm-2.3-.3 1.4-1.4 16 16-1.4 1.4-6.4-6.4L11.8 19H9.7l1.9-5.4z'))}
   </div>`;
 }
-const rteHasContent = (ed) => !!ed.textContent.replace(/ /g, ' ').trim() || !!ed.querySelector('hr');
+const rteHasContent = (ed) => !!ed.textContent.replace(/ /g, ' ').trim() || !!ed.querySelector('hr, img[data-zd-token]');
+/** Tokens of the images pasted into the editor (already uploaded to Zendesk); sent with the comment. */
+const rteUploads = (ed) => [...ed.querySelectorAll('img[data-zd-token]')].map((i) => i.dataset.zdToken);
+const rteUploading = (ed) => !!ed.querySelector('img.uploading');
 /**
  * Empty paragraphs (<p>&nbsp;</p>, <p><br></p>) are spacers: Zendesk macros contain them between
  * lines, and Zendesk's own editor drops them because paragraphs already have spacing. Sent as they
  * are, each one shows as an extra blank line in the reply, so they are removed.
  */
 const dropEmptyParas = (html) => String(html).replace(/<p\b[^>]*>(?:\s|&nbsp;| |<br\s*\/?>)*<\/p>/gi, '');
-/** The editor's content as clean Zendesk comment HTML. */
-function rteHtml(ed) {
+/**
+ * The editor's content as clean Zendesk comment HTML. Pasted images become <img src="Zendesk content_url">
+ * (shown inline once their upload token goes with the comment); `preview` keeps the local copy for mon.ai's
+ * own confirm dialog, since Zendesk URLs need your Zendesk sign-in. Images not uploaded are left out.
+ */
+function rteHtml(ed, { preview = false } = {}) {
   const c = ed.cloneNode(true);
   c.querySelectorAll('[contenteditable]').forEach((n) => n.removeAttribute('contenteditable'));
-  return dropEmptyParas(rteClean(c.innerHTML)).trim();
+  c.querySelectorAll('img').forEach((img) => {
+    if (!img.dataset.zdUrl || !img.dataset.zdToken) { img.remove(); return; }
+    const n = document.createElement('img');
+    n.src = preview ? img.src : img.dataset.zdUrl;
+    n.alt = img.alt || '';
+    img.replaceWith(n);
+  });
+  return dropEmptyParas(DOMPurify.sanitize(c.innerHTML, {
+    ALLOWED_TAGS: [...RTE_TAGS, 'img'], ALLOWED_ATTR: ['href', 'class', 'style', 'color', 'src', 'alt'],
+    ALLOWED_URI_REGEXP: preview ? /^(https?:|mailto:|blob:|\/users\/\d+$)/i : /^(https?:|mailto:|\/users\/\d+$)/i,
+  })).trim();
 }
-/** Wire a toolbar made by rteToolbar() to a contenteditable editor. `onChange` runs after edits. */
-function wireRte(bar, ed, onChange = () => {}) {
+const RTE_IMG = /^image\/(png|jpeg|gif|webp|bmp)$/;
+/** Wire a toolbar made by rteToolbar() to a contenteditable editor. `onChange` runs after edits. `images`: paste/drop images (uploaded to Zendesk). */
+function wireRte(bar, ed, onChange = () => {}, { images = false } = {}) {
   let saved = null; // the editor's selection, kept while you use the toolbar
   const keep = () => { const s = getSelection(); if (s.rangeCount && ed.contains(s.anchorNode)) saved = s.getRangeAt(0).cloneRange(); };
   const restore = () => { ed.focus(); if (saved) { const s = getSelection(); s.removeAllRanges(); s.addRange(saved); } };
@@ -378,11 +417,45 @@ function wireRte(bar, ed, onChange = () => {}) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); link(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'u') { e.preventDefault(); exec('underline'); }
   });
-  // Paste keeps formatting (bold, lists, links…) but nothing else: no fonts, sizes, scripts or images.
+  // Pasted / dropped images: shown right away from the local copy, uploaded to Zendesk meanwhile.
+  // The upload's token goes with the comment on Submit (see rteUploads); a failed upload is removed.
+  const imageFiles = (dt) => (images ? [...(dt?.files || [])].filter((f) => RTE_IMG.test(f.type)) : []);
+  const addImages = async (files) => {
+    for (const f of files) {
+      const key = `up${Math.random().toString(36).slice(2, 10)}`;
+      document.execCommand('insertHTML', false, `<img src="${URL.createObjectURL(f)}" class="rte-img uploading" data-up="${key}" alt="">`);
+      onChange();
+      try {
+        const name = f.name && f.name !== 'image.png' ? f.name : `pasted-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`;
+        const res = await fetch(`/api/zendesk/uploads?name=${encodeURIComponent(name)}&type=${encodeURIComponent(f.type)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: f });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok || !r.token) throw new Error(r.error || res.statusText);
+        const img = ed.querySelector(`[data-up="${key}"]`);
+        if (img) { img.dataset.zdToken = r.token; img.dataset.zdUrl = r.url || ''; img.alt = r.name || name; img.title = `${r.name || name} · uploaded to Zendesk, sent with this comment`; img.classList.remove('uploading'); }
+      } catch (err) {
+        ed.querySelector(`[data-up="${key}"]`)?.remove();
+        toast(`Image not added: ${err.message}`);
+      }
+      onChange();
+    }
+  };
+  ed.addEventListener('dragover', (e) => { if (images && [...(e.dataTransfer?.items || [])].some((i) => i.kind === 'file')) e.preventDefault(); });
+  ed.addEventListener('drop', (e) => {
+    const files = imageFiles(e.dataTransfer);
+    if (!files.length) return;
+    e.preventDefault();
+    const at = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+    if (at && ed.contains(at.startContainer)) { const s = getSelection(); s.removeAllRanges(); s.addRange(at); } else ed.focus();
+    addImages(files);
+  });
+  // Paste keeps formatting (bold, lists, links…) but nothing else: no fonts, sizes or scripts.
+  // An image (a screenshot, or an image copied on its own) is uploaded to Zendesk and shown inline.
   ed.addEventListener('paste', (e) => {
     const html = e.clipboardData?.getData('text/html');
     const text = e.clipboardData?.getData('text/plain');
-    if (!html && !text) return;
+    const files = imageFiles(e.clipboardData);
+    if (files.length && !text?.trim()) { e.preventDefault(); addImages(files); return; }
+    if (!html && !text) { if (e.clipboardData?.files?.length) { e.preventDefault(); toast(images ? 'Only images (PNG, JPEG, GIF, WebP) can be pasted here' : 'Images can\'t be pasted here'); } return; }
     e.preventDefault();
     if (html) {
       const tmp = document.createElement('div');
@@ -723,7 +796,7 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     closePop();
     summarize();
   };
-  wireRte(form.querySelector('.rte-bar'), editor, () => summarize());
+  wireRte(form.querySelector('.rte-bar'), editor, () => summarize(), { images: true });
   // Bigger / smaller editing area; the size you drag to (or pick) is remembered.
   try { const h = localStorage.getItem('mon.rteHeight'); if (h) editor.style.height = h; } catch { /* storage unavailable */ }
   const saveHeight = () => { if (bigPop) return; try { localStorage.setItem('mon.rteHeight', editor.style.height || ''); } catch { /* ignore */ } };
@@ -1011,6 +1084,7 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     return {
       status: chosen && chosen !== t.status ? chosen : undefined,
       html: rteHasContent(editor) ? rteHtml(editor) : '',
+      uploads: rteUploads(editor),
       public: mode === 'public',
       ccs: mode === 'public' ? { add: ccAdd.map((p) => (p.id ? { id: p.id } : { email: p.email })), remove: [...ccRemove] } : { add: [], remove: [] },
       addFollowers,
@@ -1028,6 +1102,7 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     if (x.groupId !== undefined) parts.push(`assign → ${x.assigneeId ? agentName(x.assigneeId) : `${dir.find((g) => g.id === x.groupId)?.name} (group)`}`);
     if (x.addFollowers.length) parts.push(`+followers ${x.addFollowers.map(agentName).join(', ')}`);
     if (x.html) parts.push(x.public ? 'public reply' : 'internal note');
+    if (x.html && x.uploads.length) parts.push(`${x.uploads.length} image${x.uploads.length === 1 ? '' : 's'}`);
     if (x.ccs.add.length) parts.push(`+CC ${ccAdd.map((p) => p.name || p.email).join(', ')}`);
     if (x.ccs.remove.length) parts.push(`−CC ${curCcs.filter((c) => ccRemove.has(c.id)).map((c) => c.name).join(', ')}`);
     if (x.addTags) parts.push(`+tags ${x.addTags.join(', ')}`);
@@ -1115,7 +1190,9 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
     e.preventDefault();
     const x = summarize();
     const changes = { ...x };
+    if (rteUploading(editor)) { toast('An image is still uploading to Zendesk. Submit again in a moment.'); return; }
     if (!changes.html) { delete changes.html; delete changes.public; }
+    if (!changes.html || !changes.uploads.length) delete changes.uploads;
     if (!x.ccs.add.length && !x.ccs.remove.length) delete changes.ccs;
     else if (!changes.html) { toast('CC changes are sent with a public reply: write the reply first'); editor.focus(); return; }
     if (!x.addFollowers.length) delete changes.addFollowers;
@@ -1148,7 +1225,7 @@ async function renderPreview(id, body, { fresh = false, head = null } = {}) {
           rows.push(['To', esc(to.join(', '))]);
           if (ccRemove.size) rows.push(['CC removed', esc(curCcs.filter((c) => ccRemove.has(c.id)).map((c) => c.name).join(', '))]);
         }
-        rows.push([replying ? 'Public reply' : 'Internal note', `<div class="modal-note rte-view">${changes.html}</div>`]);
+        rows.push([replying ? 'Public reply' : 'Internal note', `<div class="modal-note rte-view">${rteHtml(editor, { preview: true })}</div>`]);
       }
       if (changes.timeSpent) rows.push(['Time logged', `<span class="mono">${fmtTime(changes.timeSpent)}</span>`]);
       const extra = [solving && 'solve', reassigning && 're-assign'].filter(Boolean).join(' and ');
@@ -1357,8 +1434,9 @@ function clientPanelHtml(org, info, { compact = false } = {}) {
   const repoList = repos.length
     ? repos.map((r) => `<div style="padding:3px 0"><div class="repo-name">${vscodeBtn(r.path)}${pullBtn(r)}<b>${esc(r.name)}</b>${compact ? '' : ` <span class="pill">${esc(r.branch || '?')}</span>`} ${r.changes ? `<span class="pill amber">${r.changes} changed</span>` : ''}</div>${compact ? '' : `<div class="sub mono">${esc(r.path)}</div>`}</div>`).join('')
     : '<div class="sub">No repositories for this client.</div>';
-  return `<div class="card"><h2>Azure &amp; DevOps</h2>${azure}</div>
-    <div class="card"><h2>Cloudflare</h2>${zoneList}</div>
+  return `<div class="card infra-card"><h2>Infrastructure</h2>
+      <h3 class="infra-sub">Azure &amp; DevOps</h3>${azure}
+      <h3 class="infra-sub">Cloudflare</h3>${zoneList}</div>
     <div class="card"><h2>Repositories</h2>${repoList}</div>`;
 }
 
@@ -2203,32 +2281,58 @@ function userBodyHtml(text, atts = []) {
   return html + (rest.length ? attachmentsHtml(rest) : '');
 }
 
-/** Assistant tab: every chat, grouped by client, newest first. */
-/** Assistant tab: chats grouped by client, newest first. Archived chats have their own tab. */
-async function chatList(archived = false) {
-  const [sessions, other] = await Promise.all([api(`/api/sessions${archived ? '?archived=1' : ''}`), api(`/api/sessions${archived ? '' : '?archived=1'}`)]);
-  const [activeN, archivedN] = archived ? [other.length, sessions.length] : [sessions.length, other.length];
+/**
+ * Assistant tab: chats grouped by client, newest first. Deleted and resolved chats go to the bin:
+ * Archive (archived under 30 days ago), then Deep archive; deleted for good a year after archiving.
+ * `folder`: null (active) · 'archive' · 'deep'.
+ */
+const BIN = {
+  archive: { tab: 'Archive', route: 'archived', intro: 'Chats you deleted, and chats whose ticket was solved or closed, in the last 30 days. The assistant still searches them for similar past cases. Deleted chats can be restored; chats of solved tickets are kept as a reference only.', empty: 'The Archive is empty. Deleted chats, and chats whose ticket is solved or closed, land here.' },
+  deep: { tab: 'Deep archive', route: 'deep', intro: 'Chats archived more than 30 days ago. Still searchable by the assistant; each is deleted for good one year after it was archived, unless you restore it.', empty: 'Nothing in the Deep archive. Chats move here 30 days after they are archived.' },
+};
+async function chatList(folder = null) {
+  const [active, bin] = await Promise.all([api('/api/sessions'), api('/api/sessions?archived=1')]);
+  const counts = { archive: bin.filter((x) => x.folder !== 'deep').length, deep: bin.filter((x) => x.folder === 'deep').length };
+  const sessions = folder ? bin.filter((x) => (folder === 'deep' ? x.folder === 'deep' : x.folder !== 'deep')) : active;
+  const archived = !!folder;
   const orgs = [...new Set(state.orgs.map((o) => o.org))].sort((x, y) => x.localeCompare(y));
   view.innerHTML = `<div class="page-head"><div><h1>Assistant</h1>
-      <div class="sub">${archived ? 'Archived chats: their ticket was solved or closed (or you archived them). The assistant searches them for similar past cases. Sending a message in one reopens it.' : 'Each client chat can see that client’s tickets, Azure, Cloudflare and repositories. Chats are archived automatically when their ticket is solved.'}</div></div>
+      <div class="sub">${archived ? BIN[folder].intro : 'Each client chat can see that client’s tickets, Azure, Cloudflare and repositories. Deleting a chat moves it to the Archive; so does solving its ticket.'}</div></div>
     <div class="row"><input class="search" id="chatFilter" placeholder="Filter chats…">
       ${archived ? '' : `<select id="newChatOrg" class="select"><option value="">General</option>${orgs.map((o) => `<option>${esc(o)}</option>`).join('')}</select>
       <button class="btn primary" id="newChatGo">New chat</button>`}</div></div>
-    <div class="seg" style="margin-bottom:14px"><button class="${archived ? '' : 'active'}" onclick="location.hash='#/chat'">Active <span class="count">${activeN}</span></button><button class="${archived ? 'active' : ''}" onclick="location.hash='#/chat/archived'">Archived <span class="count">${archivedN}</span></button></div>
+    <div class="seg" style="margin-bottom:14px"><button class="${archived ? '' : 'active'}" onclick="location.hash='#/chat'">Active <span class="count">${active.length}</span></button>${Object.entries(BIN).map(([k, b]) => `<button class="${folder === k ? 'active' : ''}" onclick="location.hash='#/chat/${b.route}'">${k === 'deep' ? '🗃' : '🗑'} ${b.tab} <span class="count">${counts[k]}</span></button>`).join('')}</div>
     <div id="chatGroups"></div>`;
   $('#newChatGo')?.addEventListener('click', () => newChat($('#newChatOrg').value || null));
   filterBox('#chatFilter', 'Filter chats…', sessions, (x, q) => hit(q, x.title, x.org, x.archive_reason, x.ticket_id && `#${x.ticket_id}`), (list, q) => {
     const by = new Map();
     for (const x of list) { const k = x.org === 'All' ? 'General' : x.org; if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
     $('#chatGroups').innerHTML = [...by].map(([org, items]) => `<div class="card chat-group"><div class="row" style="justify-content:space-between"><h2 style="margin:0">${org === 'General' ? 'General' : clientBadge(org) + `<span style="margin-left:8px">${esc(org)}</span>`}</h2><span class="sub">${items.length}</span></div>
-      ${items.map((x) => `<a class="chat-row" href="#/chat/${x.id}"><span class="t">${esc(x.title)}</span><span class="sub">${archived ? `${esc(x.archive_reason || 'Archived')} · ${ago(x.archived_at)}` : ago(x.updated_at)}</span></a>`).join('')}</div>`).join('')
-      || `<div class="empty">${q ? `No chats match “${esc(q)}”.` : archived ? 'Nothing archived yet. Chats are archived when their ticket is solved or closed.' : 'No chats yet. Start one above, or use Ask AI on a ticket.'}</div>`;
+      ${items.map((x) => `<a class="chat-row${archived ? ' bin-row' : ''}" href="#/chat/${x.id}"><span class="t">${esc(x.title)}</span><span class="sub">${archived ? `${esc(x.archive_reason || 'Archived')} · ${ago(x.archived_at)}${x.folder === 'deep' ? ` · deleted for good ${new Date(x.purge_at).toLocaleDateString()}` : ''}` : ago(x.updated_at)}</span>${archived ? `<span class="bin-acts">${x.reference_only ? `<span class="pill" title="Ticket #${x.ticket_id} is ${esc(x.ticket_status)}: the chat is kept as a reference and can't be reopened">📌 Reference</span>` : `<button type="button" class="btn small" data-bin-restore="${x.id}" title="Move back to active chats">↩ Restore</button>`}<button type="button" class="btn small danger" data-bin-forever="${x.id}" title="Delete permanently: not kept as a reference">Delete forever</button></span>` : ''}</a>`).join('')}</div>`).join('')
+      || `<div class="empty">${q ? `No chats match “${esc(q)}”.` : archived ? BIN[folder].empty : 'No chats yet. Start one above, or use Ask AI on a ticket.'}</div>`;
+  });
+  $('#chatGroups').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-bin-restore], [data-bin-forever]');
+    if (!btn) return;
+    e.preventDefault(); e.stopPropagation();
+    const id = btn.dataset.binRestore || btn.dataset.binForever;
+    const title = sessions.find((x) => x.id === id)?.title || 'this chat';
+    try {
+      if (btn.dataset.binRestore) { await api(`/api/sessions/${id}/unarchive`, { method: 'POST', body: {} }); toast(`Restored “${title}”`); }
+      else {
+        if (!(await confirmDialog({ title: 'Delete forever?', intro: `<b>${esc(title)}</b> is removed permanently with its attachments, and the assistant can no longer use it as a reference. This can't be undone.`, danger: true }))) return;
+        await api(`/api/sessions/${id}?forever=1`, { method: 'DELETE' });
+        toast('Deleted forever');
+      }
+      chatList(folder);
+    } catch (err) { toast(err.message); }
   });
 }
 
 async function chatPage(id, opts = {}) {
   if (!id) return chatList();
-  if (id === 'archived') return chatList(true);
+  if (id === 'archived') return chatList('archive');
+  if (id === 'deep') return chatList('deep');
   const host = opts.host || view;          // the ticket screen draws the chat in its first column
   const embedded = !!opts.host;
   const alive = () => (embedded ? host.isConnected : state.route.name === 'chat' && state.route.id === id);
@@ -2254,17 +2358,18 @@ async function chatPage(id, opts = {}) {
             ${s.ticket_id ? `<button role="menuitem" data-act="upvote" title="${s.ticket_upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${s.ticket_upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>` : ''}
             <button role="menuitem" data-act="cooldown" title="${chatCooled(s) ? 'Bring this chat back to normal' : `Dim it in the sidebar and stop offering Zendesk refreshes${s.ticket_id ? ' until someone else updates the ticket' : ''}. Sending a message ends it.`}">${chatCooled(s) ? '☀ End cooldown' : '❄ Cooldown'}</button>
             <button role="menuitem" data-act="skill" title="Turn what this chat did into a reusable skill (you review it before saving)">＋ Create skill from chat</button>
-            <button role="menuitem" data-act="archive" title="${s.archived_at ? 'Move back to active chats' : 'Hide from the sidebar but keep as a reference for the assistant'}">${s.archived_at ? '↩ Unarchive' : '🗄 Archive'}</button>
             <hr>
-            <button role="menuitem" data-act="delete" class="danger" title="Delete permanently (not kept as a reference)">🗑 Delete</button>
+            ${s.archived_at ? `${s.reference_only ? '' : '<button role="menuitem" data-act="restore" title="Move back to active chats">↩ Restore</button>'}
+            <button role="menuitem" data-act="forever" class="danger" title="Delete permanently (not kept as a reference)">🗑 Delete forever</button>`
+              : '<button role="menuitem" data-act="delete" class="danger" title="Move to the Archive: hidden from the sidebar, kept as a reference, restorable. Deleted for good after a year.">🗑 Delete</button>'}
           </div></span></div></div>
-    ${s.archived_at ? `<div class="archived-banner">🗄 Archived ${ago(s.archived_at)}${s.archive_reason ? ` · ${esc(s.archive_reason)}` : ''}. Kept as a reference the assistant can search. Sending a message reopens it.</div>` : ''}
+    ${s.archived_at ? `<div class="archived-banner">${Date.now() - Date.parse(s.archived_at) >= 30 * 864e5 ? '🗃 In the Deep archive' : '🗑 In the Archive'} since ${ago(s.archived_at)}${s.archive_reason ? ` · ${esc(s.archive_reason)}` : ''}. Kept as a reference the assistant can search; deleted for good on ${new Date(Date.parse(s.archived_at) + 365 * 864e5).toLocaleDateString()}. ${s.reference_only ? `📌 Ticket #${s.ticket_id} is ${esc(s.ticket_status)}, so this chat is reference only and can't be reopened. Ask AI on the ticket starts a new chat.` : 'Restore it from ⋯, or send a message to reopen it.'}</div>` : ''}
     <div class="zd-banner" id="zdBanner" hidden></div>
     <div class="msgs" id="msgs"><div class="msgs-inner">${s.messages.map((m) => m.role === 'user'
       ? userMsgHtml(m.content, m.id)
       : `<div class="msg assistant" data-raw="${esc(m.content.text || '')}">${assistantHtml(m.content, models)}</div>`).join('')
       || `<div class="empty">Ask about your tickets, Azure resources, Cloudflare zones or code. Try “What should I work on first?” or type / for skills. You can attach or paste images and files.</div>`}</div></div>
-    <form class="composer" id="composer">
+    <form class="composer" id="composer"${s.reference_only ? ' style="display:none"' : ''}>
       <div class="composer-grip" id="edGrip" title="Drag to resize · double-click to reset"></div>
       <div class="edit-bar" id="editBar" hidden><span>✎ Editing your message. <b>Ctrl+Enter</b> replaces it and everything after it.</span><button type="button" class="btn small" id="editCancel">Cancel</button></div>
       <div class="composer-row">
@@ -2332,14 +2437,19 @@ async function chatPage(id, opts = {}) {
         menuBtn.disabled = true; menuBtn.textContent = 'Drafting skill…';
         pendingSkillDraft = await api(`/api/sessions/${id}/skill-draft`, { method: 'POST', body: {} });
         location.hash = '#/skills/new';
-      } else if (act === 'archive') {
-        await api(`/api/sessions/${id}/${s.archived_at ? 'unarchive' : 'archive'}`, { method: 'POST', body: {} });
-        toast(s.archived_at ? 'Chat moved back to active' : 'Chat archived');
+      } else if (act === 'restore') {
+        await api(`/api/sessions/${id}/unarchive`, { method: 'POST', body: {} });
+        toast('Chat restored');
         chatPage(id, opts);
       } else if (act === 'delete') {
-        if (await confirmDialog({ title: 'Delete this chat?', intro: 'It is removed permanently and not kept as a reference.', danger: true })) {
-          await api(`/api/sessions/${id}`, { method: 'DELETE' });
-          location.hash = embedded ? `#/ticket/${s.ticket_id}` : '#/chat';
+        await api(`/api/sessions/${id}`, { method: 'DELETE' });
+        toast('Moved to the Archive (Assistant › Archive to restore)');
+        location.hash = embedded ? `#/ticket/${s.ticket_id}` : '#/chat';
+      } else if (act === 'forever') {
+        if (await confirmDialog({ title: 'Delete this chat forever?', intro: "It is removed permanently with its attachments, and the assistant can no longer use it as a reference. This can't be undone.", danger: true })) {
+          await api(`/api/sessions/${id}?forever=1`, { method: 'DELETE' });
+          toast('Deleted forever');
+          location.hash = embedded ? `#/ticket/${s.ticket_id}` : '#/chat/archived';
         }
       }
     } catch (err) { toast(err.message); if (menuBtn.isConnected) { menuBtn.disabled = false; menuBtn.textContent = '⋯'; } }
@@ -2695,7 +2805,6 @@ async function drawNoChatHead(tid) {
         <button role="menuitem" data-act="upvote" title="${upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>
         <button role="menuitem" data-act="cooldown" title="${cooled ? 'Back to Needs you now' : 'Park it in the Dashboard\'s Cooling down tab until someone else updates it'}">${cooled ? '☀ End cooldown' : '❄ Cooldown'}</button>
         <button role="menuitem" data-act="skill" disabled ${noChat}>＋ Create skill from chat</button>
-        <button role="menuitem" data-act="archive" disabled ${noChat}>🗄 Archive</button>
         <hr>
         <button role="menuitem" data-act="delete" class="danger" disabled ${noChat}>🗑 Delete</button>
       </div></span></div>`;
@@ -2725,6 +2834,16 @@ async function startTicketChat(tid, org, subject, host, prompt, skill = null) {
   pendingPrompt = prompt;
   pendingSkill = skill;
   await chatPage(s.id, { host });
+}
+
+// Client panel: a header (client name + controls) and a body of cards, so the same markup
+// works as a right column or as a horizontal strip under the ticket header.
+function shapeSide(side) {
+  const head = document.createElement('div'); head.className = 'tv-side-head';
+  const body = document.createElement('div'); body.className = 'tv-side-cards';
+  [...side.children].forEach((el) => (el.matches('.tv-side-bar, .side-title') ? head : body).appendChild(el));
+  const bar = head.querySelector('.tv-side-bar'); if (bar) head.appendChild(bar); // controls go last (right)
+  side.replaceChildren(head, body);
 }
 
 async function ticketPage(id, chatId) {
@@ -2762,11 +2881,20 @@ async function ticketPage(id, chatId) {
     split.addEventListener('pointerup', up);
   });
   split.addEventListener('dblclick', () => { setSplit(0); try { localStorage.removeItem(splitKey); } catch { /* ignore */ } });
-  const sideBar = () => '<div class="tv-side-bar"><button class="btn small" data-side-close title="Hide the client panel">Hide »</button></div>';
+  // ---- client panel: on the right, or as a strip under the header (Auto: top when the screen is narrow, e.g. portrait)
+  const sidePos = () => { try { return localStorage.getItem('mon.tvSidePos') || 'auto'; } catch { return 'auto'; } };
+  const placeSide = () => {
+    const pos = sidePos();
+    tv.classList.toggle('side-top', pos === 'top' || (pos === 'auto' && tv.clientWidth < 1400));
+    tv.querySelectorAll('[data-side-pos]').forEach((b) => b.classList.toggle('active', b.dataset.sidePos === pos));
+  };
+  new ResizeObserver(() => { if (tv.isConnected) placeSide(); }).observe(tv);
+  const sideBar = () => `<div class="tv-side-bar"><span class="seg small" title="Where the client panel sits">${[['auto', 'Auto', 'Top on narrow screens, right on wide ones'], ['top', 'Top', 'Under the ticket header'], ['right', 'Right', 'Beside the preview']].map(([k, l, t]) => `<button type="button" data-side-pos="${k}" title="${t}" class="${sidePos() === k ? 'active' : ''}">${l}</button>`).join('')}</span><button class="btn small" data-side-close title="Hide the client panel">Hide »</button></div>`;
   const setSide = (on) => { tv.classList.toggle('side-open', on); try { localStorage.setItem('mon.tvSide', on ? 'dock' : 'hide'); } catch { /* ignore */ } };
   tv.addEventListener('click', (e) => {
     if (e.target.closest('#tvSideTab')) setSide(true);
     else if (e.target.closest('[data-side-close]')) setSide(false);
+    else if (e.target.closest('[data-side-pos]')) { try { localStorage.setItem('mon.tvSidePos', e.target.closest('[data-side-pos]').dataset.sidePos); } catch { /* ignore */ } placeSide(); }
   });
 
   tvChipsEl = null; // a new ticket: no chips from the previous one
@@ -2790,8 +2918,39 @@ async function ticketPage(id, chatId) {
     </div>`;
     const go = async (prompt, skill = null) => {
       chatHost.querySelectorAll('button, textarea').forEach((x) => { x.disabled = true; });
+      const enable = () => chatHost.querySelectorAll('button, textarea').forEach((x) => { x.disabled = false; });
       const d = await previewP;
-      try { await startTicketChat(tid, d?.org, d?.ticket?.subject, chatHost, prompt, skill); } catch (err) { toast(err.message); chatHost.querySelectorAll('button, textarea').forEach((x) => { x.disabled = false; }); }
+      try {
+        // An archived chat for this ticket (in the Archive or Deep archive): restore it, or start fresh and delete it.
+        const old = (await api('/api/sessions?archived=1').catch(() => [])).filter((x) => Number(x.ticket_id) === tid);
+        if (old.length) {
+          const o = old[0]; // newest first
+          const where = o.folder === 'deep' ? 'Deep archive' : 'Archive';
+          const pick = await confirmDialog({
+            title: `#${tid} already has an archived chat`,
+            intro: `<b>${esc(o.title)}</b><div class="sub">In the ${where} since ${ago(o.archived_at)} · ${esc(o.archive_reason || 'Archived')}${old.length > 1 ? ` · and ${old.length - 1} older chat${old.length > 2 ? 's' : ''}` : ''}</div>
+              <p>${o.reference_only ? `The ticket is ${esc(o.ticket_status)}, so the old chat is reference only: you can read it, not continue it.` : 'Continue where it left off, or start over with a fresh context.'} A new chat deletes the old one${old.length > 1 ? 's' : ''} for good: ${old.length > 1 ? 'they' : 'it'} can't be restored and the assistant can no longer use ${old.length > 1 ? 'them' : 'it'} as a reference.</p>`,
+            choices: [
+              o.reference_only ? { value: 'view', label: 'Open the old chat', cls: 'primary', title: 'Read it here (reference only)' } : { value: 'restore', label: '↩ Restore it', cls: 'primary', title: 'Move it back to active chats and continue there' },
+              { value: 'fresh', label: 'New chat, delete old forever', cls: 'danger-solid' },
+            ],
+          });
+          if (!pick) { enable(); return; }
+          if (pick === 'restore' || pick === 'view') {
+            if (pick === 'restore') { await api(`/api/sessions/${o.id}/unarchive`, { method: 'POST', body: {} }); toast('Chat restored'); }
+            history.replaceState(null, '', `#/ticket/${tid}/${o.id}`);
+            state.route = parseRoute();
+            loadSidebar();
+            await chatPage(o.id, { host: chatHost });
+            const box = chatHost.querySelector('#input'); // your own question isn't lost: it waits in the chat box
+            if (pick === 'restore' && box && prompt !== ASK_PROMPT(tid)) edSet(box, prompt);
+            return;
+          }
+          for (const x of old) await api(`/api/sessions/${x.id}?forever=1`, { method: 'DELETE' });
+          toast(`Deleted ${old.length} archived chat${old.length > 1 ? 's' : ''} for #${tid}`);
+        }
+        await startTicketChat(tid, d?.org, d?.ticket?.subject, chatHost, prompt, skill);
+      } catch (err) { toast(err.message); enable(); }
     };
     drawNoChatHead(tid);
     $('#tvAsk').onclick = () => go(ASK_PROMPT(tid), 'triage-ticket');
@@ -2815,11 +2974,12 @@ async function ticketPage(id, chatId) {
   const side = $('#tvSide');
   if (!side) return;
   const org = d?.org;
-  if (!org || org === 'All') { side.innerHTML = `${sideBar()}<div class="sub">No client linked to this ticket.</div>${CHAT_USAGE_SLOT}`; loadChatUsage(state.route.sub); return; }
+  if (!org || org === 'All') { side.innerHTML = `${sideBar()}<div class="sub">No client linked to this ticket.</div>${CHAT_USAGE_SLOT}`; shapeSide(side); loadChatUsage(state.route.sub); return; }
   $('#tvSideTab').textContent = org;
   const [info, tickets] = await Promise.all([clientInfo(org), api(`/api/tickets?org=${encodeURIComponent(org)}`).catch(() => [])]);
   if (!side.isConnected) return;
   side.innerHTML = sideBar() + clientSideHtml(org, info, tickets, tid) + CHAT_USAGE_SLOT;
+  shapeSide(side);
   loadChatUsage(state.route.sub);
   if (!azStatus || Date.now() - new Date(azStatus.checkedAt) > 5 * 60_000) refreshAzureStatus();
 }
@@ -3633,26 +3793,19 @@ async function drawUsageData() {
       ${visual}<div class="us-breakdown-table">${tableContent(rows, options)}</div>
     </div>`;
   };
-  $('#usTables').innerHTML = [
-    `<div class="us-overview-row">
-      <div class="card us-table us-wide" id="usChats"></div>
+  const skillLink = (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label));
+  const fill = (html) => html.replace('class="card us-table', 'class="card us-table us-fillcard');
+  const skillCard = fill(table('By skill', d.bySkill, { first: 'Skill', link: skillLink, note: 'the /skill a message ran (or the first one it used)', scroll: true }));
+  const appCard = usage$.app ? '' : dimension('app', 'By app', d.bySource, { first: 'App', link: (r) => `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">${esc(r.label)}</button>` });
+  const folderCard = d.byProject.length ? fill(table('Other apps by folder', d.byProject, { first: 'App · folder', note: 'Claude Desktop, VS Code and CLI sessions, by the folder they ran in', scroll: true })) : '';
+  const clientCard = usage$.app === 'mon.ai' ? fill(table('By client', d.byClient, { first: 'Client', note: 'mon.ai chats', link: (r) => (r.key ? `<a href="#/org/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), scroll: true })) : '';
+  const right = [clientCard, appCard, folderCard].filter(Boolean);
+  // Rows of equal-height cards: tables fill whatever height the row has and scroll inside.
+  $('#usTables').innerHTML = `<div class="us-row us-row-top">
+      <div class="card us-table us-wide us-fillcard" id="usChats"></div>
       ${dimension('model', 'By model', d.byModel.map((r) => ({ ...r, label: r.label.replace(/^claude-/, '') })), { first: 'Model' })}
-    </div>`,
-    `<div class="us-breakdowns ${usage$.app === 'mon.ai' ? 'us-breakdowns-mon-ai' : ''}">
-      <div class="us-breakdown-column">
-        ${usage$.app ? '' : dimension('app', 'By app', d.bySource, { first: 'App', link: (r) => `<button type="button" class="link" data-app="${esc(r.key)}" title="Show only ${esc(r.label)}">${esc(r.label)}</button>` })}
-        ${d.byProject.length ? table('Other apps by folder', d.byProject, { first: 'App · folder', note: 'Claude Desktop, VS Code and CLI sessions, by the folder they ran in' }) : ''}
-      </div>
-      <div class="us-breakdown-column">
-        ${usage$.app === 'mon.ai'
-          ? `<div class="us-skill-client-row">
-              ${table('By skill', d.bySkill, { first: 'Skill', link: (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), note: 'the /skill a message ran (or the first one it used)', scroll: true })}
-              ${table('By client', d.byClient, { first: 'Client', note: 'mon.ai chats', link: (r) => (r.key ? `<a href="#/org/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), scroll: true })}
-            </div>`
-          : table('By skill', d.bySkill, { first: 'Skill', link: (r) => (r.key ? `<a href="#/skills/${encodeURIComponent(r.key)}">${esc(r.label)}</a>` : esc(r.label)), note: 'the /skill a message ran (or the first one it used)' })}
-      </div>
-    </div>`,
-  ].join('');
+    </div>
+    <div class="us-row us-row-bottom">${skillCard}${right.length ? `<div class="us-colstack">${right.join('')}</div>` : ''}</div>`;
   drawChatUsage(d.byChat, totalCost);
 }
 
@@ -3762,6 +3915,11 @@ es.addEventListener('notifications:updated', (e) => {
 });
 es.addEventListener('zendesk:status', () => refreshDashboard().catch(() => {}));
 es.addEventListener('sessions:updated', () => loadSidebar());
+// A solved ticket was reopened on Zendesk: its chat came back from the Archive.
+es.addEventListener('chats:restored', (e) => {
+  for (const c of JSON.parse(e.data || '[]')) toast(`#${c.ticketId} was reopened (now ${c.status}): its chat is back in the sidebar. Use ↻ Zendesk in it to catch up.`);
+  if (state.route.name === 'chat' && !state.route.id) chatList();
+});
 es.addEventListener('skills:updated', () => { skillsCache = null; if (state.route.name === 'skills' && !state.route.id) skillsPage(); });
 es.addEventListener('repos:updated', () => { invalidate('repos'); loadSidebar(); if (state.route.name === 'repos' && !$('#repoBody .card')) reposPage(); });
 es.addEventListener('config:changed', (e) => { const { name } = JSON.parse(e.data); invalidate('azure', 'zones'); toast(`Config “${name}” reloaded`); loadSidebar(); });

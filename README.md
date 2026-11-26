@@ -108,7 +108,7 @@ Personal use only: the Claude subscription login belongs to you and should not b
 
 ## Starting mon.ai
 
-- **Start menu / desktop**: the **mon.ai** shortcut starts the server in the background (no window) if it isn't running, and opens https://mon.ai. **mon.ai - restart** (Start menu) restarts it after an update; **mon.ai - stop** stops it. Pin **mon.ai** to the taskbar from the Start menu for one click.
+- **Start menu / desktop**: the **mon.ai** shortcut starts the server in the background (no window) if it isn't running, and opens https://mon.ai. **mon.ai - restart** (Start menu) restarts it after an update and reloads open mon.ai Edge windows without opening another; **mon.ai - stop** stops it. Pin **mon.ai** to the taskbar from the Start menu for one click.
 - **From a terminal** in the mon-ai folder: `npm run bg` (start in background), `npm run restart`, `npm run stop`, `npm run status`. `npm start` still runs it in the terminal.
 - **From any terminal, any folder**: `mon start`, `mon restart`, `mon stop`, `mon status` (add `-NoBrowser` to skip opening the browser). This is `bin\mon.cmd`; the `bin` folder must be on your user PATH:
   `[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ';D:\SmartOSC\Assistant\mon-ai\bin', 'User')`

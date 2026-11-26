@@ -1,5 +1,5 @@
 # Adds mon.ai shortcuts for the current user (no admin needed):
-#   Start menu:  "mon.ai" (start + open) and "mon.ai - restart" (after updating) and "mon.ai - stop"
+#   Start menu:  "mon.ai" (start + open) and "mon.ai - restart" (after updating; reloads open windows) and "mon.ai - stop"
 #   Desktop:     "mon.ai"
 #   -AutoStart   also start mon.ai in the background when you sign in to Windows (Startup folder)
 #   -Remove      remove everything this script added
@@ -14,7 +14,7 @@ $desktop = [Environment]::GetFolderPath('Desktop')
 $startup = [Environment]::GetFolderPath('Startup')
 $links = @(
   @{ Path = Join-Path $startMenu 'mon.ai.lnk'; Args = 'start'; Tip = 'Start mon.ai (if needed) and open it' },
-  @{ Path = Join-Path $startMenu 'mon.ai - restart.lnk'; Args = 'restart'; Tip = 'Restart mon.ai (after updating it) and open it' },
+  @{ Path = Join-Path $startMenu 'mon.ai - restart.lnk'; Args = 'restart'; Tip = 'Restart mon.ai (after updating it) and reload open windows' },
   @{ Path = Join-Path $startMenu 'mon.ai - stop.lnk'; Args = 'stop'; Tip = 'Stop mon.ai' },
   @{ Path = Join-Path $desktop 'mon.ai.lnk'; Args = 'start'; Tip = 'Start mon.ai (if needed) and open it' }
 )
