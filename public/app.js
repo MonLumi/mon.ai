@@ -560,6 +560,7 @@ view.addEventListener('click', (e) => {
 let pendingPrompt = null;
 let pendingSkill = null; // whose model pendingPrompt uses (Ask AI = triage-ticket)
 let chatTicketWatch = null; // set by an open ticket chat; called when tickets sync
+let chatCompact = null; // { sid, run } for the open chat, when it can be compacted (Usage card › Context)
 
 // ---------------- Zendesk panel (middle column of the ticket workspace) ----------------
 const when = (iso) => iso ? `${new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${ago(iso)}` : '—';
@@ -2471,7 +2472,6 @@ async function chatPage(id, opts = {}) {
             ${s.ticket_id ? `<button role="menuitem" data-act="upvote" title="${s.ticket_upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${s.ticket_upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>` : ''}
             <button role="menuitem" data-act="cooldown" title="${chatCooled(s) ? 'Bring this chat back to normal' : `Dim it in the sidebar and stop offering Zendesk refreshes${s.ticket_id ? ' until someone else updates the ticket' : ''}. Sending a message ends it.`}">${chatCooled(s) ? '☀ End cooldown' : '❄ Cooldown'}</button>
             <button role="menuitem" data-act="skill" title="Turn what this chat did into a reusable skill (you review it before saving)">＋ Create skill from chat</button>
-            ${s.claude_session_id && !s.reference_only ? '<button role="menuitem" data-act="compact" title="Replace the older part of this conversation with a summary, so each new message re-reads less. Claude Code also does this on its own when the context fills up.">🗜 Compact conversation</button>' : ''}
             <hr>
             ${s.archived_at ? `${s.reference_only ? '' : '<button role="menuitem" data-act="restore" title="Move back to active chats">↩ Restore</button>'}
             <button role="menuitem" data-act="forever" class="danger" title="Delete permanently (not kept as a reference)">🗑 Delete forever</button>`
@@ -2534,6 +2534,21 @@ async function chatPage(id, opts = {}) {
       toast(`Next replies use ${e.target.value ? modelLabel(models, e.target.value) : 'the default model'}`);
     } catch (err) { toast(err.message); }
   };
+  // ---- Compact (button on the Usage card's Context row): the older part of the conversation becomes a summary
+  chatCompact = s.claude_session_id && !s.reference_only ? { sid: id, run: async () => {
+    if (busy) { toast('Wait for the current reply to finish'); return; }
+    busy = true;
+    $('#sendBtn').disabled = true;
+    const btn = $('#chatUsage [data-compact]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Compacting…'; }
+    inner.insertAdjacentHTML('beforeend', compactHtml(null, true));
+    msgs.scrollTop = msgs.scrollHeight;
+    try {
+      const c = await api(`/api/sessions/${id}/compact`, { method: 'POST', body: {} });
+      toast(c.preTokens ? `Compacted: ${fmtTok(c.preTokens)} → ${fmtTok(c.postTokens)} tokens` : 'Conversation compacted');
+    } catch (err) { toast(err.message); } finally { busy = false; chatPage(id, opts); } // redraw either way (divider on success, back to normal on error)
+  } } : null;
+  if ($('#chatUsage')?.dataset.chat === id) loadChatUsage(id); // card drawn before this chat's controls were ready
   // ---- ⋯ menu: cooldown, skill, archive, delete
   const menuBtn = $('#chatMenuBtn');
   wireMenu(menuBtn, $('#chatMenu'), async (act) => {
@@ -2552,16 +2567,6 @@ async function chatPage(id, opts = {}) {
         menuBtn.disabled = true; menuBtn.textContent = 'Drafting skill…';
         pendingSkillDraft = await api(`/api/sessions/${id}/skill-draft`, { method: 'POST', body: {} });
         location.hash = '#/skills/new';
-      } else if (act === 'compact') {
-        if (busy) { toast('Wait for the current reply to finish'); return; }
-        busy = true;
-        menuBtn.disabled = true; $('#sendBtn').disabled = true;
-        inner.insertAdjacentHTML('beforeend', compactHtml(null, true));
-        msgs.scrollTop = msgs.scrollHeight;
-        try {
-          const c = await api(`/api/sessions/${id}/compact`, { method: 'POST', body: {} });
-          toast(c.preTokens ? `Compacted: ${fmtTok(c.preTokens)} → ${fmtTok(c.postTokens)} tokens` : 'Conversation compacted');
-        } finally { busy = false; chatPage(id, opts); } // redraw either way (divider on success, back to normal on error)
       } else if (act === 'restore') {
         await api(`/api/sessions/${id}/unarchive`, { method: 'POST', body: {} });
         toast('Chat restored');
@@ -4082,16 +4087,18 @@ async function loadChatUsage(sid) {
     const pct = Math.min(100, Math.round(c.pct * 100));
     const level = pct >= 80 ? 'hi' : pct >= 60 ? 'mid' : '';
     return `<div class="cu-ctx ${level}" title="Tokens the next turn sends: the last reply's prompt, cache and output (${c.tokens.toLocaleString()} of ${c.window.toLocaleString()}${c.estimatedWindow ? ', window size estimated' : ''})">
-      <div class="cu-ctx-head"><span>Context</span><span><b>${fmtTok(c.tokens)}</b> / ${fmtTok(c.window)} · <b>${pct}%</b></span></div>
+      <div class="cu-ctx-head"><span>Context${chatCompact?.sid === sid ? ' <button type="button" class="btn small cu-compact" data-compact title="Replace the older part of this conversation with a summary, so each new message re-reads less. Claude Code also does this on its own when the context fills up.">🗜 Compact</button>' : ''}</span><span><b>${fmtTok(c.tokens)}</b> / ${fmtTok(c.window)} · <b>${pct}%</b></span></div>
       <div class="cu-ctx-bar"><i style="width:${pct}%"></i></div></div>`;
   })() : '';
   el.innerHTML = `<h2>This chat <a class="sub" href="#/usage" style="float:right;font-weight:400">Usage →</a></h2>${ctxHtml}
     ${t.calls ? `<div class="cu-kpis"><div><b>${fmtCost(t.cost)}</b><span>cost</span></div><div><b>${t.turns}</b><span>runs</span></div><div><b>${fmtTok(t.tokens)}</b><span>tokens</span></div><div><b>${t.cacheHit == null ? '–' : `${Math.round(t.cacheHit * 100)}%`}</b><span>cache</span></div></div>
     <div class="cu-sec">Models</div>${u.byModel.map((m) => `<div class="cu-row"><span><i class="sw m-${famOf(m.label)}"></i> ${esc(m.label.replace(/^claude-/, ''))}</span><span>${fmtTok(m.tokens)} · <b>${fmtCost(m.cost)}</b></span></div>`).join('')}
-    <div class="cu-sec">Skills</div>${u.bySkill.map((k) => `<div class="cu-row"><span>${k.key ? `<a href="#/skills/${encodeURIComponent(k.key)}">${esc(k.label)}</a>` : '<span class="sub">No skill</span>'} <span class="sub">×${k.turns}</span></span><span><b>${fmtCost(k.cost)}</b></span></div>`).join('')}
+    <div class="cu-sec">Skills</div>${u.bySkill.map((k) => `<div class="cu-row"><span>${dots(k.models)} ${k.key ? `<a href="#/skills/${encodeURIComponent(k.key)}">${esc(k.label)}</a>` : '<span class="sub">No skill</span>'} <span class="sub">×${k.turns}</span></span><span><b>${fmtCost(k.cost)}</b></span></div>`).join('')}
     <div class="cu-sec">Last runs</div>${u.lastRuns.map((r) => `<div class="cu-run"><div class="cu-run-text" title="${esc(r.label)}">${esc(r.label.slice(0, 90))}</div>
       <div class="sub">${dots(r.models)} ${r.skill ? `/${esc(r.skill)} · ` : ''}${r.skillsUsed?.length && r.skillsUsed[0] !== r.skill ? `used ${r.skillsUsed.map((x) => `/${esc(x)}`).join(', ')} · ` : ''}${r.calls} call${r.calls === 1 ? '' : 's'} · ${r.tools} tool${r.tools === 1 ? '' : 's'} · ${fmtTok(r.tokens)} · <b>${fmtCost(r.cost)}</b> · ${ago(r.at)}</div></div>`).join('')}`
     : '<div class="sub">No runs yet. Skills, models, tokens and cost show here after the first reply.</div>'}`;
+  const cb = el.querySelector('[data-compact]');
+  if (cb) cb.onclick = () => chatCompact?.sid === sid && chatCompact.run();
 }
 
 // ---------------- router ----------------
