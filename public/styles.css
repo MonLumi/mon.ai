@@ -1182,9 +1182,9 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .zd-pinned .zd-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
 .zd-pinned .comment { background: var(--panel); box-shadow: var(--shadow); }
 /* who wrote it: Dataweavers public replies have an accent edge on the right (your side, like your messages in chat),
-   customer messages a gray edge on the left */
+   customer messages a teal edge on the left */
 .zd-pinned .comment.agent:not(.internal) { background: var(--panel); box-shadow: inset -3px 0 0 var(--accent), var(--shadow); }
-.zd-pinned .comment.customer:not(.internal) { box-shadow: inset 3px 0 0 #9aa1ae, var(--shadow); }
+.zd-pinned .comment.customer:not(.internal) { box-shadow: inset 3px 0 0 #0d9488, var(--shadow); }
 .zd-pinned .comment.internal { background: var(--amber-soft); }
 /* Update ticket: its own gray card, pinned under the conversation (like the chat box under the chat) */
 .zd-pinned > .tk-update { margin: 6px 8px 0 2px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); box-shadow: 0 -4px 14px -6px rgba(16,24,40,.14); }
