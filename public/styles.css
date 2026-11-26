@@ -1147,3 +1147,20 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .dash-table td:not(:first-child) { white-space: nowrap; }
 .assignees.dash-table th.sortable { white-space: normal; }
 .assignees .sort-ind { width: auto; }
+/* Zendesk panel: details scroll, the Update ticket box stays pinned at the bottom (like the chat box) */
+.tv-zendesk.zd-pinned { display: flex; flex-direction: column; overflow: visible; padding: 0; }
+.zd-pinned > .zd-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 18px 16px; }
+.zd-pinned > .tk-update, .zd-pinned > .tk-compose-home { flex: none; margin: 0; }
+.zd-pinned > .tk-update { border: none; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); box-shadow: 0 -6px 12px -8px rgba(16,24,40,.18); }
+.zd-pinned .rte { height: 160px; max-height: 38vh; }
+/* near the bottom of the screen: pickers open upwards */
+.zd-pinned .tk-note .mention-pop { top: auto; bottom: calc(100% - 4px); }
+@media (max-width: 1100px) { .tv-zendesk.zd-pinned { padding: 0; } .zd-pinned > .zd-scroll { overflow: visible; } }
+/* Update ticket: title · Macros · Aa · timer on one row */
+.tk-top { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+.tk-top-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* Assignee + Followers on one row; extra followers wrap onto the next line */
+.tk-people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tk-people > .tk-label + .tk-label, .tk-people > .tk-assign + .tk-label { margin-left: 8px; }
+.tk-people > .tk-chips { display: contents; }
+.tk-add.tk-assign { max-width: 240px; }

@@ -623,15 +623,22 @@ function commentFiles(c) {
 }
 document.addEventListener('click', (e) => { const img = e.target.closest('img.zd-img'); if (img?.dataset.full) window.open(img.dataset.full, '_blank', 'noopener'); });
 
+// Per-ticket time tracking (Update ticket box): kept in localStorage so switching tickets, reloading or
+// restarting mon.ai keeps it. It goes back to 0 only when you Submit an update (or press ↺).
+const tkTimerKey = (tid) => `mon.tkTimer.${tid}`;
+const tkTimerLoad = (tid) => { try { return JSON.parse(localStorage.getItem(tkTimerKey(tid)) || 'null'); } catch { return null; } };
+const tkTimerSave = (tid, v) => { try { if (v) localStorage.setItem(tkTimerKey(tid), JSON.stringify({ ...v, at: Date.now() })); else localStorage.removeItem(tkTimerKey(tid)); } catch { /* storage unavailable */ } };
+
 /** Ticket details and the update form, drawn into `body`. Resolves with the details (null on error). */
 async function renderZendeskPanel(id, body, { fresh = false, head = null } = {}) {
   const seq = String(Math.random());
   body.dataset.seq = seq;
   const stale = () => body.dataset.seq !== seq || !body.isConnected; // reloaded, or you left the page
-  body.innerHTML = `<div class="drawer-head"><h2>#${esc(id)}</h2></div><div class="sub">Loading from Zendesk…</div>`;
+  body.classList.add('zd-pinned'); // details scroll; the Update ticket box stays pinned at the bottom
+  body.innerHTML = `<div class="zd-scroll"><div class="drawer-head"><h2>#${esc(id)}</h2></div><div class="sub">Loading from Zendesk…</div></div>`;
   let d;
   try { d = await api(`/api/tickets/${encodeURIComponent(id)}${fresh ? '?fresh=1' : ''}`); } catch (err) {
-    if (!stale()) body.innerHTML = `<div class="drawer-head"><h2>#${esc(id)}</h2></div><div class="notice err">${esc(err.message)}</div>`;
+    if (!stale()) body.innerHTML = `<div class="zd-scroll"><div class="drawer-head"><h2>#${esc(id)}</h2></div><div class="notice err">${esc(err.message)}</div></div>`;
     return null;
   }
   if (stale()) return null;
@@ -654,7 +661,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
     if (head.chips) head.info.querySelector('.tvh-line').append(head.chips); // the chat's chips sit on the same row
     head.actions.innerHTML = zendeskButtons;
   }
-  body.innerHTML = `
+  body.innerHTML = `<div class="zd-scroll">
     ${head ? '' : `<div class="zendesk-sticky">
     <div class="drawer-head">
       <div style="min-width:0"><div class="sub">#${t.id} · ${esc(d.org || '')}</div><h2>${esc(t.subject || '(no subject)')}</h2></div>
@@ -681,11 +688,12 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
           <span class="sub">${when(c.created_at)}</span></div>
         ${commentHtml(c, zdOrigin)}
         ${commentFiles(c)}
-      </div>`).join('') || '<div class="sub">No comments.</div>'}</div>`;
+      </div>`).join('') || '<div class="sub">No comments.</div>'}</div></div>`;
+  const scroller = $('.zd-scroll', body);
   $('#zendeskReload', head ? head.actions : body).onclick = () => renderZendeskPanel(id, body, { fresh: true, head });
   // Header stays at the top while the Zendesk panel scrolls; a shadow shows once content is underneath.
   const sticky = $('.zendesk-sticky', body);
-  body.onscroll = () => sticky?.classList.toggle('stuck', body.scrollTop > 4);
+  scroller.onscroll = () => sticky?.classList.toggle('stuck', scroller.scrollTop > 4);
   // Long messages: drag the corner to resize, or "Show all" / "Collapse"
   body.querySelectorAll('.comment-body').forEach((el) => {
     if (el.scrollHeight <= el.clientHeight + 4) return;
@@ -717,8 +725,12 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
   const assignValue = (gid, aid) => `${gid || ''}:${aid || ''}`;
   const current = assignValue(d.groupId, d.assigneeId);
   body.insertAdjacentHTML('beforeend', `<form class="tk-update" id="tkUpdate">
-    <div class="row" style="justify-content:space-between">
+    <div class="tk-top">
       <h3 class="drawer-sec" style="margin:0">Update ticket <span class="sub">posted to Zendesk as you</span></h3>
+      <span class="tk-top-tools">
+      <span class="tk-macro-wrap" id="tkMacroWrap"><button type="button" class="btn small" id="tkMacroBtn" title="Apply a Zendesk macro: fills the reply and the changes it makes; nothing is sent until you Submit">⚡ Macros</button>
+        <div class="macro-pop" id="tkMacroPop" hidden><input id="tkMacroQ" placeholder="Search macros…" autocomplete="off"><div class="macro-list" id="tkMacroList"></div></div></span>
+      <button type="button" class="rte-btn rte-toggle" id="tkFmt" title="Formatting toolbar" aria-pressed="false">Aa</button>
       <div class="tk-timer" title="Time spent on this ticket, logged to Zendesk on Submit (like the Time Tracking app)">
         <label class="check"><input type="checkbox" name="logTime" checked> ⏱</label>
         <button type="button" class="tk-time" id="tkTime" title="Click to set the time yourself">0:00:00</button>
@@ -726,16 +738,12 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
         <button type="button" class="icon-btn" id="tkPause" title="Pause">⏸</button>
         <button type="button" class="icon-btn" id="tkReset" title="Reset to 0">↺</button>
       </div>
+      </span>
     </div>
     <div class="tk-compose internal" id="tkCompose">
       <div class="tk-compose-head">
         <div class="seg tk-mode"><button type="button" data-mode="public">Public reply</button><button type="button" data-mode="internal" class="active">Internal note</button></div>
         <span class="sub" id="tkModeHint">Only your team sees it. Type @ to mention a colleague.</span>
-        <span class="tk-compose-tools">
-          <span class="tk-macro-wrap" id="tkMacroWrap" hidden><button type="button" class="btn small" id="tkMacroBtn" title="Apply a Zendesk macro: fills the reply and the changes it makes; nothing is sent until you Submit">⚡ Macros</button>
-            <div class="macro-pop" id="tkMacroPop" hidden><input id="tkMacroQ" placeholder="Search macros…" autocomplete="off"><div class="macro-list" id="tkMacroList"></div></div></span>
-          <button type="button" class="rte-btn rte-toggle" id="tkFmt" title="Formatting toolbar" aria-pressed="false">Aa</button>
-        </span>
       </div>
       <div class="macro-applied" id="tkMacroApplied" hidden></div>
       <div class="tk-cc" id="tkCc" hidden>
@@ -750,9 +758,9 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
         <div class="mention-pop" id="tkMention" hidden></div>
       </div>
     </div>
-    <div class="tk-grid">
+    <div class="tk-people">
       <label class="tk-label">Assignee</label>
-      <select name="assign" class="select">
+      <select name="assign" class="tk-add select tk-assign" title="Assignee">
         ${dir.map((g) => `<optgroup label="${esc(g.name)}">
           <option value="${g.id}:">${esc(g.name)} (group only, unassigned)</option>
           ${g.agents.map((a) => `<option value="${g.id}:${a.id}">${esc(a.name)}${a.id === d.assigneeId ? ' (current)' : ''}</option>`).join('')}
@@ -760,12 +768,14 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
         ${dir.some((g) => assignValue(g.id, '') === current || g.agents.some((a) => assignValue(g.id, a.id) === current)) ? '' : `<option value="${current}">${esc(d.assignee?.name || 'Unassigned')} (current)</option>`}
       </select>
       <label class="tk-label">Followers</label>
-      <div class="tk-chips" id="tkFollowers"></div>
+      <span class="tk-chips" id="tkFollowers"></span>
+    </div>
+    ${missing.length ? `<div class="tk-grid">
       ${missing.map((m) => `<label class="tk-label tk-req" hidden>${esc(m.title)} *</label>
       ${m.options.length
         ? `<select class="select tk-req" data-field="${m.id}" hidden><option value="">Required to solve: choose…</option>${m.options.map((o) => `<option value="${esc(o.value)}">${esc(o.name)}</option>`).join('')}</select>`
         : `<input class="tk-req" data-field="${m.id}" placeholder="Required to solve" hidden>`}`).join('')}
-    </div>
+    </div>` : ''}
     <div class="tk-actions">
       <div class="seg tk-status">${editable.map((s2) => `<button type="button" data-st="${s2}" class="${t.status === s2 ? 'active' : ''}">${s2 === 'solved' ? 'Solved' : s2[0].toUpperCase() + s2.slice(1)}</button>`).join('')}</div>
       ${cat ? `<select class="select tk-cat" data-field="${cat.id}" title="${esc(cat.title)}${cat.required ? ' (required to solve)' : ''}">${categoryOptions(cat)}</select>` : ''}
@@ -790,7 +800,6 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
     $('#tkCompose').classList.toggle('public', m === 'public');
     form.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
     $('#tkCc').hidden = m !== 'public';
-    $('#tkMacroWrap').hidden = m !== 'public';
     $('#tkModeHint').textContent = m === 'public' ? `Goes to ${d.requester?.name || 'the requester'}${curCcs.length || ccAdd.length ? ' and the CCs' : ''} by email.` : 'Only your team sees it. Type @ to mention a colleague.';
     editor.dataset.ph = m === 'public' ? 'Public reply to the customer…' : 'Internal note…';
     closePop();
@@ -1015,8 +1024,12 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
     else if (!e.target.closest('.chip')) ccInput.focus();
   });
 
-  // ---- timer: starts when the Zendesk panel opens; pause, reset, or type your own time before Submit
-  let elapsed = 0, running = true, lastTick = Date.now();
+  // ---- timer: counts while this ticket is open, pauses while you're on another ticket or page and
+  //      carries on when you come back (kept per ticket); pause, reset, or type your own time before Submit
+  const saved = tkTimerLoad(t.id) || {};
+  let elapsed = saved.ms || 0, running = !saved.paused, lastTick = Date.now();
+  if (saved.off) { form.logTime.checked = false; form.querySelector('.tk-timer').classList.add('off'); }
+  const saveTimer = () => tkTimerSave(t.id, { ms: elapsed, paused: !running, off: !form.logTime.checked });
   const fmtTime = (sec) => `${Math.floor(sec / 3600)}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
   const seconds = () => Math.floor(elapsed / 1000);
   const tick = () => {
@@ -1025,10 +1038,12 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
     if (running) elapsed += now - lastTick;
     lastTick = now;
     $('#tkTime').textContent = fmtTime(seconds());
+    saveTimer();
   };
   const timerId = setInterval(tick, 1000);
   const setRunning = (on) => { tick(); running = on; $('#tkPause').textContent = on ? '⏸' : '▶'; $('#tkPause').title = on ? 'Pause' : 'Resume'; form.querySelector('.tk-timer').classList.toggle('paused', !on); };
-  $('#tkPause').onclick = () => setRunning(!running);
+  if (!running) setRunning(false); else tick();
+  $('#tkPause').onclick = () => { setRunning(!running); saveTimer(); };
   $('#tkReset').onclick = () => { elapsed = 0; tick(); summarize(); };
   // "15m", "1h 20m", "90" (minutes), "1:30" (h:mm), "0:45:00"
   const parseTime = (v) => {
@@ -1060,7 +1075,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
   };
   $('#tkTimeEdit').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); finishEdit(true); } else if (e.key === 'Escape') { e.stopPropagation(); finishEdit(false); } };
   $('#tkTimeEdit').onblur = () => finishEdit(true);
-  form.logTime.onchange = () => { form.querySelector('.tk-timer').classList.toggle('off', !form.logTime.checked); summarize(); };
+  form.logTime.onchange = () => { form.querySelector('.tk-timer').classList.toggle('off', !form.logTime.checked); saveTimer(); summarize(); };
 
   // what will change, shown before you submit
   const reqFields = () => Object.fromEntries([...form.querySelectorAll('.tk-req[data-field]')].filter((el) => el.value).map((el) => [el.dataset.field, el.value]));
@@ -1245,6 +1260,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
     try {
       await api(`/api/tickets/${t.id}/update`, { method: 'POST', body: changes });
       toast(`#${t.id} updated${changes.timeSpent ? ` · ${fmtTime(changes.timeSpent)} logged` : ''}`);
+      clearInterval(timerId); tkTimerSave(t.id, null); // you updated the ticket: the next stretch starts at 0
       renderZendeskPanel(t.id, body, { head });
     } catch (err) {
       toast(err.message);
@@ -1252,8 +1268,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
     }
   };
   // Jump to the newest comment at the bottom, like Zendesk.
-  const last = body.querySelector('.comment:last-child');
-  if (last && d.comments.length > 2) body.scrollTop = last.offsetTop + last.offsetHeight - body.clientHeight + 16;
+  if (d.comments.length > 2) scroller.scrollTop = scroller.scrollHeight;
   return d;
 }
 
