@@ -1180,3 +1180,11 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tk-compose-head .tk-cc .mention-pop { left: 0; }
 /* Zendesk panel: long messages are shown in full (no inner scroller / Show all) */
 .tv-zendesk .comment-body, .tv-zendesk .comment-body.comment-html { max-height: none; }
+/* Pinned Update ticket box: vertical resize grip on top (instead of the editor's lower-right corner) */
+.tk-grip { display: none; }
+.zd-pinned > .tk-update { position: relative; }
+.zd-pinned > .tk-update > .tk-grip { display: flex; justify-content: center; align-items: center; position: absolute; left: 50%; top: -11px; width: 22px; height: 22px; margin-left: -11px; z-index: 7;
+  border: 1px solid var(--border); border-radius: 50%; background: var(--panel); color: var(--muted); cursor: ns-resize; touch-action: none; box-shadow: 0 1px 3px rgba(16,24,40,.12); }
+.zd-pinned > .tk-update > .tk-grip svg { width: 8px; height: 16px; }
+.zd-pinned > .tk-update > .tk-grip:hover, .zd-pinned > .tk-update > .tk-grip.dragging { color: var(--accent); border-color: var(--accent); }
+.zd-pinned > .tk-update .rte { resize: none; max-height: 60vh; }

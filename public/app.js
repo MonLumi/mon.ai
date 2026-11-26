@@ -707,6 +707,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
   const assignValue = (gid, aid) => `${gid || ''}:${aid || ''}`;
   const current = assignValue(d.groupId, d.assigneeId);
   body.insertAdjacentHTML('beforeend', `<form class="tk-update" id="tkUpdate">
+    <div class="tk-grip" id="tkGrip" title="Drag up or down to resize the editor · double-click to reset" role="separator" aria-orientation="horizontal"><svg viewBox="0 0 12 24" width="10" height="20" aria-hidden="true"><path d="M6 1 L11 7 H1 Z M6 23 L1 17 H11 Z" fill="currentColor"/><path d="M6 6 V18" stroke="currentColor" stroke-width="1.6"/></svg></div>
     <div class="tk-top">
       <h3 class="drawer-sec" style="margin:0">Update ticket <span class="sub">posted to Zendesk as you</span></h3>
       <span class="tk-top-tools">
@@ -791,6 +792,22 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
   try { const h = localStorage.getItem('mon.rteHeight'); if (h) editor.style.height = h; } catch { /* storage unavailable */ }
   const saveHeight = () => { if (bigPop) return; try { localStorage.setItem('mon.rteHeight', editor.style.height || ''); } catch { /* ignore */ } };
   new ResizeObserver(() => { if (editor.isConnected && editor.style.height) saveHeight(); }).observe(editor);
+  // Pinned at the bottom of the Zendesk panel: resize from the grip on top (drag up = taller, the box grows upwards)
+  const grip = $('#tkGrip');
+  grip.addEventListener('pointerdown', (e) => {
+    if (bigPop) return;
+    e.preventDefault();
+    try { grip.setPointerCapture(e.pointerId); } catch { /* lost pointer */ }
+    const y0 = e.clientY, h0 = editor.offsetHeight;
+    // leave room for the conversation above
+    const max = Math.max(120, body.clientHeight - (form.offsetHeight - h0) - 140);
+    grip.classList.add('dragging');
+    const move = (ev) => { editor.style.height = `${Math.round(Math.min(max, Math.max(70, h0 + y0 - ev.clientY)))}px`; };
+    const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.classList.remove('dragging'); saveHeight(); };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+  });
+  grip.addEventListener('dblclick', () => { editor.style.height = ''; try { localStorage.removeItem('mon.rteHeight'); } catch { /* ignore */ } });
 
   // ---- ⤢ Big editor: the whole Update ticket box (timer, reply/note, CC, macros, formatting,
   //      assignee, followers, status, category, Submit) moves into a large popup and works as usual.
