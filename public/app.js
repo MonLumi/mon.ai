@@ -669,6 +669,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
     </div>
     <div class="row" style="margin:8px 0 12px">${pills}<span class="sub">${esc(st.who)}</span></div>
     </div>`}
+    <div class="zd-card">
     <dl class="facts">
       <dt>Requester</dt><dd>${esc(d.requester?.name || '—')}</dd>
       <dt>Assignee</dt><dd>${esc(d.assignee?.name || 'Unassigned')}</dd>
@@ -678,7 +679,8 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
       ${t.due_at ? `<dt>Due</dt><dd>${when(t.due_at)}</dd>` : ''}
       ${t.tags?.length ? `<dt>Tags</dt><dd>${t.tags.map((x) => `<span class="pill">${esc(x)}</span>`).join(' ')}</dd>` : ''}
     </dl>
-    ${reasons.length ? `<div class="reasons" style="margin:10px 0">${reasons.map(reasonPill).join('')}</div>` : ''}
+    ${reasons.length ? `<div class="reasons" style="margin:10px 0 0">${reasons.map(reasonPill).join('')}</div>` : ''}
+    </div>
     <h3 class="drawer-sec">Conversation <span class="sub">oldest first · ${d.comments.length} ${d.comments.length === 30 ? 'latest ' : ''}shown</span></h3>
     <div class="thread">${d.comments.map((c) => `
       <div class="comment ${c.public ? '' : 'internal'} ${c.author?.agent ? 'agent' : 'customer'}">
