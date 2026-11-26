@@ -64,6 +64,7 @@ Skills are reusable instructions for repeated tasks, managed on the **Skills** p
 - **Automatic:** the assistant also picks a skill on its own when your request matches the skill's "When to use it" description.
 - **Per client:** a skill can apply to all clients or just one; a client-only skill shows up only in that client's chats.
 - **Starters:** `triage-ticket`, `plan-my-day` and `draft-customer-reply`. Edit or delete them freely; changes apply from the next message.
+- **Internal notes:** `/draft-internal-note <ticket> [purpose]` drafts a Zendesk internal note for colleagues (handover, escalation, FYI or decision): TL;DR, evidence, reasoning and hypotheses, options with trade-offs, next steps with owners, what the customer was told. Triage and ↻ Zendesk can suggest it as a Next action.
 
 ## Attention score
 

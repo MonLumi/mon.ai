@@ -23,6 +23,7 @@ This skill **only summarises and recommends**. Do not draft a reply, do not load
 
    Pick from these (1 to 4 lines; only the ones that fit):
    - `/draft-customer-reply` when the customer is waiting on us for an answer, an update or a request for information.
+   - `/draft-internal-note` when a colleague needs to pick it up, help, decide or be brought up to speed (handover, escalation, status for the team).
    - `/check-cf-block` when Cloudflare blocks or challenges requests (403 / 1020 / challenge page / 429 from Cloudflare, a Ray ID, "CF is blocking", WAF). Add the hostname / Ray ID / path if known.
    - `/check-afd-block` when Azure Front Door or its WAF blocks requests ("The request is blocked", 403 from Front Door, an `x-azure-ref`). Add the reference / URL if known.
    - `/check-site-health` when a site is slow, down, timing out or returning 5xx, or there may be a traffic spike. Add the site and time window if known.

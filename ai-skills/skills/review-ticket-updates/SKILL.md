@@ -21,4 +21,4 @@ Then end with the recommended next actions, best first, each on its own line exa
 
 Next: /<skill> <ticket number> [key details] — <why, in a few words>
 
-Choose only what fits (0 to 3): `/draft-customer-reply` (the customer is waiting on us), `/check-cf-block`, `/check-afd-block`, `/check-site-health`, `/investigate-ticket`, `/investigate-root-cause` (as in /triage-ticket). If nothing is needed from me now, say so and give no Next line.
+Choose only what fits (0 to 3): `/draft-customer-reply` (the customer is waiting on us), `/draft-internal-note` (a colleague needs to pick it up or be briefed), `/check-cf-block`, `/check-afd-block`, `/check-site-health`, `/investigate-ticket`, `/investigate-root-cause` (as in /triage-ticket). If nothing is needed from me now, say so and give no Next line.
