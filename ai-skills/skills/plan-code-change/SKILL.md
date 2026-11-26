@@ -1,6 +1,6 @@
 ---
 name: plan-code-change
-description: Plan code and repository changes on my behalf and show them as a plan card: edit files (config, pipelines, rewrites, app settings in code), create a branch, commit, push, open a pull request, pull or switch branches in my local repos. Use when I ask you to change, fix, update or commit code, YAML or config in a repo, or to raise a PR. Not for live Azure or Cloudflare changes (plan-azure-change, plan-cloudflare-change) or tickets (plan-ticket-change).
+description: Plan code and repository changes on my behalf and show them as a plan card: edit files (config, pipelines, rewrites, app settings in code), create a branch, commit, push, open a pull request, pull or switch branches in my local repos. Use when I ask you to change, fix, update or commit code, YAML or config in a repo, or to raise a PR. Not for live Azure or Cloudflare changes (plan-azure-change, plan-cloudflare-dashboard-change) or tickets (plan-ticket-change).
 mon-model: opus
 mon-effort: medium
 mon-category: Actions

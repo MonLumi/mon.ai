@@ -1,6 +1,6 @@
 ---
 name: plan-azure-change
-description: Plan Azure and Azure DevOps changes on my behalf and show them as a plan card: restart / scale / swap / configure App Services, change app settings, Front Door or WAF policy rules, access restrictions, SQL, storage or other resources with az commands; create or update ADO work items and pull requests. Use when I ask you to change, restart, scale, deploy, fix or update something in Azure or ADO. Not for Cloudflare (plan-cloudflare-change), code (plan-code-change) or tickets (plan-ticket-change).
+description: Plan Azure and Azure DevOps changes on my behalf and show them as a plan card: restart / scale / swap / configure App Services, change app settings, Front Door or WAF policy rules, access restrictions, SQL, storage or other resources with az commands; create or update ADO work items and pull requests. Use when I ask you to change, restart, scale, deploy, fix or update something in Azure or ADO. Not for Cloudflare (plan-cloudflare-dashboard-change), code (plan-code-change) or tickets (plan-ticket-change).
 mon-model: opus
 mon-effort: medium
 mon-category: Actions

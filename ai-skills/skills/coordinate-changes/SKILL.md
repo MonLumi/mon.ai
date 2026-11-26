@@ -1,6 +1,6 @@
 ---
 name: coordinate-changes
-description: Plan a request that needs changes in MORE THAN ONE system (e.g. fix a Cloudflare or Azure rule, commit the code, then reply on the ticket and set it to pending) and show it as ONE plan card. Use for multi-system changes on my behalf; for a change in one system use plan-ticket-change, plan-azure-change, plan-cloudflare-change or plan-code-change directly.
+description: Plan a request that needs changes in MORE THAN ONE system (e.g. fix a Cloudflare or Azure rule, commit the code, then reply on the ticket and set it to pending) and show it as ONE plan card. Use for multi-system changes on my behalf; for a change in one system use plan-ticket-change, plan-azure-change, plan-cloudflare-dashboard-change or plan-code-change directly.
 mon-model: opus
 mon-effort: medium
 mon-category: Actions
@@ -21,7 +21,7 @@ This skill holds no system details; the domain skills do. Your job is to split t
    |---|---|
    | Zendesk ticket (reply, note, status, assignee, fields, time) | `plan-ticket-change` |
    | Azure resources, Front Door / WAF policy, ADO work items | `plan-azure-change` |
-   | Cloudflare rules, DNS, cache, settings | `plan-cloudflare-change` |
+   | Cloudflare rules, DNS, cache, settings | `plan-cloudflare-dashboard-change` (I apply it in the dashboard) |
    | Code, config or pipelines in a repo; branches, commits, PRs | `plan-code-change` |
    | Anything only I can do (approval, call, portal-only step) | `manual` step |
    Plan only what I asked for. If only one system is involved, just follow that skill.

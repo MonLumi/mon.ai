@@ -1,16 +1,20 @@
 ---
 name: plan-cloudflare-change
-description: Plan Cloudflare changes on my behalf and show them as a plan card: add or change WAF custom rules, skip / exception rules, managed-rule overrides, rate limits, IP access rules, DNS records, cache purges and zone settings. Use when I ask you to allow, unblock, block, whitelist, purge or change something in Cloudflare. Not for Azure Front Door (plan-azure-change), code (plan-code-change) or tickets (plan-ticket-change).
+description: PLACEHOLDER, not in use yet. Plan Cloudflare changes that the agent itself will apply through the Cloudflare API (rulesets, DNS, purge, settings). Only use when I explicitly run /plan-cloudflare-change. For every other Cloudflare change request, use plan-cloudflare-dashboard-change (I apply it myself in the Cloudflare dashboard).
 mon-model: opus
 mon-effort: medium
 mon-category: Actions
 ---
 
-# Cloudflare actions
+# Cloudflare actions via API (placeholder)
+
+**Status: placeholder.** mon.ai doesn't apply Cloudflare changes itself yet. Until it does, Cloudflare changes are planned with `/plan-cloudflare-dashboard-change` and I make them in the dashboard. If I run this skill anyway, say so in one line and follow `plan-cloudflare-dashboard-change` instead.
+
+The notes below are kept for when the agent gets write access.
 
 Input: the client or zone and what I want changed, e.g. `/plan-cloudflare-change QBE allow Dynatrace to /api/health` or `/plan-cloudflare-change ACU purge cache for www.acu.edu.au/news`. Often follows `/check-cf-block`: reuse its findings from this chat (rule, ruleset, Ray IDs, IPs) instead of looking again.
 
-mon.ai can't change Cloudflare yet: you **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it. Never say anything was changed.
+You **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it. Never say anything was changed.
 
 ## 1. Read the current state (read-only)
 - **Zone**: use the client code as the zone (custom hostnames like `www.qbe.com` live in the client's `*.saas.dataweavers.io` zone). `cloudflare_zones` only if unclear.
@@ -23,7 +27,7 @@ mon.ai can't change Cloudflare yet: you **propose** a plan with the `mcp__mon__p
 ## 2. Plan the steps
 `action: cloudflare_change`, one change per step. `params`:
 - `zone` (name and ID), `kind` (`custom_rule`, `skip_rule`, `managed_override`, `rate_limit`, `ip_access_rule`, `dns`, `purge`, `setting`)
-- `api`: the exact call it maps to: `method`, `path` (e.g. `zones/{id}/rulesets/{rulesetId}/rules`), `body` (JSON), `position` (`{"before": "<ruleId>"}`) when order matters
+- `api`: the exact call it maps to: `method`, `path` (e.g. `zones/{id}/rulesets/{rulesetId}/rules`), `body` (JSON), `position` (`{"before": "<ruleId>"}`) when order matters.
 - `from` / `to`: current and new expression, action, record or setting
 - `rollback`: how to undo (delete the new rule ID, restore the old expression, previous DNS content)
 

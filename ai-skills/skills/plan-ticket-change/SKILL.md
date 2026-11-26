@@ -1,6 +1,6 @@
 ---
 name: plan-ticket-change
-description: Plan Zendesk ticket changes on my behalf and show them as a plan card: post a public reply or internal note, change status (open / pending / solved), re-assign (group / agent), add followers or CCs, set Category, fields or tags, log time. Use when I ask you to reply, note, update, assign, pend, solve or log time on a ticket. Only Zendesk; for Azure, Cloudflare or code changes use plan-azure-change, plan-cloudflare-change or plan-code-change.
+description: Plan Zendesk ticket changes on my behalf and show them as a plan card: post a public reply or internal note, change status (open / pending / solved), re-assign (group / agent), add followers or CCs, set Category, fields or tags, log time. Use when I ask you to reply, note, update, assign, pend, solve or log time on a ticket. Only Zendesk; for Azure, Cloudflare or code changes use plan-azure-change, plan-cloudflare-dashboard-change or plan-code-change.
 mon-model: sonnet
 mon-effort: medium
 mon-category: Actions
