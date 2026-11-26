@@ -14,6 +14,7 @@ import * as assistant from './lib/assistant.js';
 import * as usage from './lib/usage.js';
 import * as skills from './lib/skills.js';
 import * as uploads from './lib/uploads.js';
+import * as charts from './lib/charts.js';
 import * as notify from './lib/notify.js';
 
 const PORT = Number(process.env.PORT || 80);
@@ -277,6 +278,9 @@ app.get('/api/uploads/:sid/:file', (req, res) => {
     else res.download(full, req.params.file.slice(9)); // anything else downloads, never renders
   } catch { res.status(404).end(); }
 });
+
+// Azure logs / metrics chart data (azure_chart), drawn by the chat's chart cards.
+app.get('/api/charts/:id', wrap((req) => charts.get(req.params.id)));
 
 app.post('/api/sessions/:id/compact', wrap((req) => assistant.compact(req.params.id)));
 app.post('/api/sessions/:id/skill-draft', wrap((req) => assistant.draftSkillFromChat(req.params.id)));

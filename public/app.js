@@ -1,5 +1,6 @@
 import { marked } from '/vendor/marked.js';
 import DOMPurify from '/vendor/purify.js';
+import { chartCards } from '/charts.js';
 // mon.ai front end: vanilla JS, hash routing, live updates over SSE.
 const $ = (sel, el = document) => el.querySelector(sel);
 const view = $('#view');
@@ -2107,6 +2108,7 @@ function describeTool(t) {
       const metrics = a[a.indexOf('--metrics') + 1];
       return { icon: '▣', label: `Azure CLI: az ${(flag === -1 ? a : a.slice(0, flag)).join(' ')}`, detail: short([i.org, res && a.includes('--resource') && lastPart(res), metrics && a.includes('--metrics') && metrics].filter(Boolean).join(' · ')) };
     }
+    case 'azure_chart': return { icon: '📈', label: i.kind === 'metrics' || /ChartDefinition/i.test(i.portalUrl || '') ? 'Charting Azure metrics' : 'Running a KQL query', detail: short([i.title, i.resource && lastPart(i.resource), (i.metrics || []).map((m) => m.name).join(', '), i.timespan].filter(Boolean).join(' · ') || (i.query || i.portalUrl || '')) };
     case 'ado_query': return { icon: '📋', label: 'Azure DevOps query', detail: short(`${i.org || ''} ${i.wiql || ''}`) };
     case 'ado_my_work': return { icon: '📋', label: 'My Azure DevOps work', detail: i.org || '' };
     case 'git_repos': return { icon: '⎇', label: 'Listing repositories', detail: i.org || '' };
@@ -2600,6 +2602,7 @@ function assistantHtml(c, models, running = false) {
     <div class="body md">${body ? md(body) : running && !c.plan ? '<span class="typing"><span></span><span></span><span></span></span>' : ''}</div>
     ${signinCards(c.signins)}
     ${pullCards(c.pulls)}
+    ${chartCards(c.charts)}
     ${planCard(c.plan)}
     ${next.length ? `<div class="next-steps"><div class="next-title">Next actions <span class="sub">pick one; it runs as the next message with that skill's model</span></div>${next.map((n, i) => `<button type="button" class="next-btn ${i === 0 ? 'primary' : ''}" data-next="${esc(n.cmd)}" title="Send ${esc(n.cmd)}">
         <span class="next-cmd">▶ ${esc(n.cmd.split(/\s+/)[0])}<span class="next-args">${esc(n.cmd.split(/\s+/).slice(1).join(' '))}</span></span>${n.why ? `<span class="next-why">${esc(n.why)}</span>` : ''}</button>`).join('')}</div>` : ''}
@@ -3058,15 +3061,15 @@ async function chatPage(id, opts = {}) {
     }
     inner.insertAdjacentHTML('beforeend', `${userMsgHtml({ text, attachments: atts })}<div class="msg assistant"></div>`);
     const box = inner.lastElementChild;
-    const live = { segments: [''], tools: [], signins: [], pulls: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
+    const live = { segments: [''], tools: [], signins: [], pulls: [], charts: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
     const nearBottom = () => msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
     const paint = (running) => {
       const stick = nearBottom();
       const parts = live.segments.map((x) => x.trim()).filter(Boolean);
       const lastOpen = live.segments.at(-1).trim();
       const c = running
-        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, signins: live.signins, pulls: live.pulls, plan: live.plan, startedAt: live.startedAt }
-        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, signins: live.signins, pulls: live.pulls, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
+        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, signins: live.signins, pulls: live.pulls, charts: live.charts, plan: live.plan, startedAt: live.startedAt }
+        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, signins: live.signins, pulls: live.pulls, charts: live.charts, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
       // the step list stays as you left it (open or closed) while it runs, and folds up when done
       const was = box.querySelector('.worklog')?.open;
       box.innerHTML = assistantHtml(c, models, running) + live.errors.join('');
@@ -3099,6 +3102,7 @@ async function chatPage(id, opts = {}) {
           else if (type === 'tool') live.tools.push(data);
           else if (type === 'plan') live.plan = data;
           else if (type === 'signin') live.signins.push(data);
+          else if (type === 'chart') { if (!live.charts.includes(data.id)) live.charts.push(data.id); }
           else if (type === 'pull') live.pulls = [...live.pulls.filter((x) => x.path !== data.path), data];
           else if (type === 'tool_result') Object.assign(live.tools.find((x) => x.id === data.id) || {}, data);
           else if (type === 'model') { live.model = data.model; live.effort = data.effort; live.skill = data.skill; }

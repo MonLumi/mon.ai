@@ -1272,3 +1272,33 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 /* AI replies on a white card, so they don't blend into the page background (same look as the Zendesk messages) */
 .msg.assistant { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px 8px; box-shadow: var(--shadow); }
 .msg.assistant .draft-card:first-child { margin-top: 2px; }
+
+/* Azure chart card (azure_chart): chart / table, Copy image, Copy CSV */
+.chart-card { border: 1px solid var(--border); background: var(--panel); border-radius: 12px; margin: 10px 0 14px; overflow: hidden; }
+.chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px 12px; padding: 10px 12px 8px 14px; border-bottom: 1px solid var(--border); }
+.chart-titles { min-width: 0; flex: 1 1 320px; }
+.chart-title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.chart-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.chart-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chart-body { padding: 6px 8px 2px; min-height: 40px; }
+.chart-plot { position: relative; }
+.chart-plot svg { display: block; }
+.chart-hover { position: absolute; inset: 0; pointer-events: none; }
+.chart-cross { position: absolute; width: 1px; background: #8a919e; }
+.chart-tip { position: absolute; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px rgba(15, 23, 42, .12); padding: 6px 9px; font-size: 12px; white-space: nowrap; }
+.chart-tip .tip-time { color: var(--muted); margin-bottom: 3px; }
+.chart-tip .tip-row { display: flex; align-items: center; gap: 6px; }
+.chart-tip .tip-row b { margin-left: auto; padding-left: 14px; font-variant-numeric: tabular-nums; }
+.chart-tip .sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.chart-table-wrap { max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; margin: 4px 0 6px; }
+.chart-table { border-collapse: collapse; width: 100%; font-size: 12px; table-layout: auto; }
+.chart-table th { position: sticky; top: 0; background: var(--panel-2); text-align: left; font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.chart-table td { padding: 4px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; max-width: 0; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.chart-table td:first-child, .chart-table td.num { max-width: none; width: 1%; }
+.chart-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.chart-table tr.open td { white-space: pre-wrap; overflow-wrap: anywhere; }
+.chart-table tbody tr:hover { background: var(--panel-2); }
+.chart-more { padding: 0 2px 6px; }
+.chart-foot { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding: 0 14px 10px; font-size: 12px; }
+.chart-foot details summary { cursor: pointer; color: var(--muted); }
+.chart-foot pre { margin: 6px 0 0; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
