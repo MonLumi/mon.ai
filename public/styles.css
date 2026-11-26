@@ -1183,8 +1183,6 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 /* Pinned Update ticket box: vertical resize grip on top (instead of the editor's lower-right corner) */
 .tk-grip { display: none; }
 .zd-pinned > .tk-update { position: relative; }
-.zd-pinned > .tk-update > .tk-grip { display: flex; justify-content: center; align-items: center; position: absolute; left: 50%; top: -11px; width: 22px; height: 22px; margin-left: -11px; z-index: 7;
-  border: 1px solid var(--border); border-radius: 50%; background: var(--panel); color: var(--muted); cursor: ns-resize; touch-action: none; box-shadow: 0 1px 3px rgba(16,24,40,.12); }
-.zd-pinned > .tk-update > .tk-grip svg { width: 8px; height: 16px; }
-.zd-pinned > .tk-update > .tk-grip:hover, .zd-pinned > .tk-update > .tk-grip.dragging { color: var(--accent); border-color: var(--accent); }
+/* an invisible strip along the top edge: hovering it shows the standard up-down resize cursor */
+.zd-pinned > .tk-update > .tk-grip { display: block; position: absolute; left: 0; right: 0; top: -5px; height: 10px; z-index: 7; cursor: ns-resize; touch-action: none; }
 .zd-pinned > .tk-update .rte { resize: none; max-height: 60vh; }

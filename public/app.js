@@ -707,7 +707,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
   const assignValue = (gid, aid) => `${gid || ''}:${aid || ''}`;
   const current = assignValue(d.groupId, d.assigneeId);
   body.insertAdjacentHTML('beforeend', `<form class="tk-update" id="tkUpdate">
-    <div class="tk-grip" id="tkGrip" title="Drag up or down to resize the editor · double-click to reset" role="separator" aria-orientation="horizontal"><svg viewBox="0 0 12 24" width="10" height="20" aria-hidden="true"><path d="M6 1 L11 7 H1 Z M6 23 L1 17 H11 Z" fill="currentColor"/><path d="M6 6 V18" stroke="currentColor" stroke-width="1.6"/></svg></div>
+    <div class="tk-grip" id="tkGrip" title="Drag up or down to resize the editor · double-click to reset" role="separator" aria-orientation="horizontal"></div>
     <div class="tk-top">
       <h3 class="drawer-sec" style="margin:0">Update ticket <span class="sub">posted to Zendesk as you</span></h3>
       <span class="tk-top-tools">
