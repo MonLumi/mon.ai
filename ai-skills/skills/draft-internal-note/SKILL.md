@@ -44,7 +44,8 @@ A bold label per section, then `-` bullets (or a small table where it reads bett
 
 ## 4. Formatting
 The draft is Markdown that the app shows and copies formatted, exactly as the Update ticket rich editor writes it, so pasting it there keeps the formatting. Use only what that editor has:
-- **Bold** section labels (`**TL;DR:**`), *italic*, `-` and numbered lists (nested with two spaces), `inline code` for identifiers (Ray IDs, rule IDs, resource names, commands).
+- Avoid overusing bold text and inline code.
+- *italic*, `-` and numbered lists (nested with two spaces)
 - Links with display text, never a bare long URL: `[#25466 Login blocked by WAF](https://support.dataweavers.com/hc/en-us/requests/25466)`, `[PR 1234](https://…)`.
 - Tables for evidence that has several fields per row (events, timings, rule matches, before / after): a header row, at most 5 short columns, one fact per cell. Use bullets instead when there are only one or two fields.
 - Code blocks for KQL, expressions or commands. When the draft contains one, open the draft with four backticks (````draft … ````) so the inner ``` fence doesn't close it.
