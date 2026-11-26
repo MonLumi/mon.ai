@@ -694,24 +694,6 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
   // Header stays at the top while the Zendesk panel scrolls; a shadow shows once content is underneath.
   const sticky = $('.zendesk-sticky', body);
   scroller.onscroll = () => sticky?.classList.toggle('stuck', scroller.scrollTop > 4);
-  // Long messages: drag the corner to resize, or "Show all" / "Collapse"
-  body.querySelectorAll('.comment-body').forEach((el) => {
-    if (el.scrollHeight <= el.clientHeight + 4) return;
-    el.classList.add('clipped');
-    el.style.height = `${el.clientHeight}px`;
-    el.style.maxHeight = 'none';
-    const h0 = el.clientHeight;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'link comment-expand';
-    btn.textContent = 'Show all ▾';
-    btn.onclick = () => {
-      const open = el.clientHeight < el.scrollHeight - 4;
-      el.style.height = open ? `${el.scrollHeight + 4}px` : `${h0}px`;
-      btn.textContent = open ? 'Collapse ▴' : 'Show all ▾';
-    };
-    el.closest('.comment')?.querySelector('.comment-head')?.append(btn);
-  });
   // ---- Update the ticket yourself: status, internal note (with @mentions), assignee, followers
   //      (posted to Zendesk as you; the assistant never does this)
   const editable = ['open', 'pending', 'solved'];

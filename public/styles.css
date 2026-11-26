@@ -1178,3 +1178,5 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tk-compose-head .tk-cc-box input { min-width: 120px; }
 .tk-cc-box .chip.tk-to { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); font-weight: 600; padding-right: 9px; }
 .tk-compose-head .tk-cc .mention-pop { left: 0; }
+/* Zendesk panel: long messages are shown in full (no inner scroller / Show all) */
+.tv-zendesk .comment-body, .tv-zendesk .comment-body.comment-html { max-height: none; }
