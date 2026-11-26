@@ -89,17 +89,13 @@ app.get('/api/orgs', wrap(() => {
 }));
 
 // ---------- Zendesk ----------
-// A ticket whose chat you cooled down (chat ⋯ menu) counts as cooling down until someone else updates it after that.
-const CHAT_COOLED = "EXISTS (SELECT 1 FROM sessions s WHERE s.ticket_id = tickets.id AND s.archived_at IS NULL AND s.cooled_at IS NOT NULL AND NOT (tickets.updated_at > s.cooled_at AND tickets.updated_at IS NOT COALESCE(tickets.my_update_at, '')))";
-// …and so does a ticket you cooled down from its ticket workspace (⋯ menu) before it had a chat.
-const TICKET_COOLED = "(tickets.cooled_at IS NOT NULL AND NOT (tickets.updated_at > tickets.cooled_at AND tickets.updated_at IS NOT COALESCE(tickets.my_update_at, '')))";
 app.get('/api/tickets', wrap((req) => {
   const { org, scope = 'open' } = req.query;
   const resolved = scope === 'resolved';
   const where = [scope === 'open' ? "status NOT IN ('solved','closed')" : resolved ? "status IN ('solved','closed')" : '1=1'];
   const args = [];
   if (org) { where.push('org = ?'); args.push(org); }
-  return db.prepare(`SELECT id, subject, status, priority, org, org_name, requester, assignee, assignee_id, created_at, updated_at, due_at, sla_breach_at, COALESCE(relation, 'assigned') AS relation, needs_me, needs_me_reason, COALESCE(upvoted, 0) AS upvoted, upvoted_at, ((ignored_mention_at IS NOT NULL AND ((needs_me = 1 AND ignored_mention_at = needs_me_at) OR (COALESCE(relation, 'assigned') = 'unassigned' AND ignored_mention_at = updated_at))) OR ${CHAT_COOLED} OR ${TICKET_COOLED}) AS ignored, (${CHAT_COOLED} OR ${TICKET_COOLED}) AS chat_cooled, score, reasons, url, my_update_at
+  return db.prepare(`SELECT id, subject, status, priority, org, org_name, requester, assignee, assignee_id, created_at, updated_at, due_at, sla_breach_at, COALESCE(relation, 'assigned') AS relation, needs_me, needs_me_reason, COALESCE(upvoted, 0) AS upvoted, upvoted_at, ${zendesk.COOLED} AS ignored, (${zendesk.CHAT_COOLED} OR ${zendesk.TICKET_COOLED}) AS chat_cooled, score, reasons, url, my_update_at
     FROM tickets WHERE ${where.join(' AND ')} ORDER BY ${resolved ? 'updated_at DESC' : 'COALESCE(upvoted, 0) DESC, score DESC, updated_at DESC'} LIMIT ${resolved ? 200 : 500}`).all(...args)
     .map((t) => ({ ...t, reasons: JSON.parse(t.reasons) }));
 }));

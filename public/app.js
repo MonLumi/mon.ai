@@ -1083,8 +1083,8 @@ function ticketRow(t) {
       <div class="reasons">${reasons.map(reasonPill).join('')}</div>
     </div>
     <div class="actions">
-      <button class="btn small upvote ${t.upvoted ? 'active' : ''}" data-upvote="${t.id}" data-on="${t.upvoted ? 0 : 1}" title="${t.upvoted ? 'Remove from your focus list' : 'Upvote to focus on this ticket'}">👀 ${t.upvoted ? 'Upvoted' : 'Upvote'}</button>
-      ${t.needs_me || t.relation === 'unassigned' || t.chat_cooled ? `<button class="btn small" data-ignore="${t.id}" data-on="${t.ignored ? 0 : 1}" title="${t.ignored ? `Back to Open${t.chat_cooled ? ' (also ends the chat cooldown)' : ''}` : t.relation === 'unassigned' && !t.needs_me ? 'Park it in Cooled until something new happens on it' : 'Park it in Cooled until you are mentioned again or you comment'}">${t.ignored ? 'Warm up' : 'Cool down'}</button>` : ''}
+      ${t.ignored ? '' : `<button class="btn small upvote ${t.upvoted ? 'active' : ''}" data-upvote="${t.id}" data-on="${t.upvoted ? 0 : 1}" title="${t.upvoted ? 'Remove from your focus list' : 'Upvote to focus on this ticket'}">👀 ${t.upvoted ? 'Upvoted' : 'Upvote'}</button>`}
+      ${(t.needs_me || t.relation === 'unassigned' || t.chat_cooled) && (t.ignored || !t.upvoted) ? `<button class="btn small" data-ignore="${t.id}" data-on="${t.ignored ? 0 : 1}" title="${t.ignored ? `Back to Open${t.chat_cooled ? ' (also ends the chat cooldown)' : ''}` : t.relation === 'unassigned' && !t.needs_me ? 'Park it in Cooled until something new happens on it' : 'Park it in Cooled until you are mentioned again or you comment'}">${t.ignored ? 'Warm up' : 'Cool down'}</button>` : ''}
     </div>
   </div>`;
 }
@@ -1096,8 +1096,8 @@ const onTicketAction = async (e) => {
     const upvoted = uv.dataset.on === '1';
     uv.disabled = true;
     try {
-      const r = await api(`/api/tickets/${uv.dataset.upvote}/upvote`, { method: 'POST', body: { upvoted } });
-      toast(upvoted ? `#${uv.dataset.upvote} upvoted — score increased${r?.warmed ? ', cooldown ended' : ''}` : `#${uv.dataset.upvote} upvote removed`);
+      await api(`/api/tickets/${uv.dataset.upvote}/upvote`, { method: 'POST', body: { upvoted } });
+      toast(upvoted ? `#${uv.dataset.upvote} upvoted — score increased` : `#${uv.dataset.upvote} upvote removed`);
       refreshDashboard().catch(() => {});
       if (state.route.name === 'org') refreshOrgLive(state.route.id);
     } catch (err) {
@@ -1109,8 +1109,8 @@ const onTicketAction = async (e) => {
   const ig = e.target.closest('[data-ignore]');
   if (ig) {
     try {
-      const r = await api(`/api/tickets/${ig.dataset.ignore}/ignore`, { method: 'POST', body: { ignore: ig.dataset.on === '1' } });
-      toast(ig.dataset.on === '1' ? `#${ig.dataset.ignore} cooling down${r?.unvoted ? ', upvote removed' : ''}` : `#${ig.dataset.ignore} back in Open`);
+      await api(`/api/tickets/${ig.dataset.ignore}/ignore`, { method: 'POST', body: { ignore: ig.dataset.on === '1' } });
+      toast(ig.dataset.on === '1' ? `#${ig.dataset.ignore} cooling down` : `#${ig.dataset.ignore} back in Open`);
       refreshDashboard().catch(() => {});
       if (state.route.name === 'org') refreshOrgLive(state.route.id);
     } catch (err) { toast(err.message); }
@@ -3206,8 +3206,8 @@ async function chatPage(id, opts = {}) {
         ${hasClient ? `<button class="btn small" id="sideToggle" title="Show or hide the ${esc(s.org)} panel">${esc(s.org)} panel</button>` : ''}
         <span class="menu-wrap"><button class="btn small" id="chatMenuBtn" aria-haspopup="menu" aria-expanded="false" title="More actions">⋯</button>
           <div class="menu" id="chatMenu" role="menu" hidden>
-            ${s.ticket_id ? `<button role="menuitem" data-act="upvote" title="${s.ticket_upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${s.ticket_upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>` : ''}
-            <button role="menuitem" data-act="cooldown" title="${chatCooled(s) ? 'Bring this chat back to normal' : `Dim it in the sidebar and stop offering Zendesk refreshes${s.ticket_id ? ' until someone else updates the ticket' : ''}. Sending a message ends it.`}">${chatCooled(s) ? '☀ End cooldown' : '❄ Cooldown'}</button>
+            ${s.ticket_id && !chatCooled(s) ? `<button role="menuitem" data-act="upvote" title="${s.ticket_upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${s.ticket_upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>` : ''}
+            ${s.ticket_upvoted && !chatCooled(s) ? '' : `<button role="menuitem" data-act="cooldown" title="${chatCooled(s) ? 'Bring this chat back to normal' : `Dim it in the sidebar and stop offering Zendesk refreshes${s.ticket_id ? ' until someone else updates the ticket' : ''}. Sending a message ends it.`}">${chatCooled(s) ? '☀ End cooldown' : '❄ Cooldown'}</button>`}
             <button role="menuitem" data-act="skill" title="Turn what this chat did into a reusable skill (you review it before saving)">＋ Create skill from chat</button>
             <hr>
             ${s.archived_at ? `${s.reference_only ? '' : '<button role="menuitem" data-act="restore" title="Move back to active chats">↩ Restore</button>'}
@@ -3291,14 +3291,14 @@ async function chatPage(id, opts = {}) {
   wireMenu(menuBtn, $('#chatMenu'), async (act) => {
     try {
       if (act === 'upvote' && s.ticket_id) {
-        const r = await api(`/api/tickets/${s.ticket_id}/upvote`, { method: 'POST', body: { upvoted: !s.ticket_upvoted } });
-        toast(s.ticket_upvoted ? `#${s.ticket_id} upvote removed` : `#${s.ticket_id} upvoted — score increased${r?.warmed ? ', cooldown ended' : ''}`);
+        await api(`/api/tickets/${s.ticket_id}/upvote`, { method: 'POST', body: { upvoted: !s.ticket_upvoted } });
+        toast(s.ticket_upvoted ? `#${s.ticket_id} upvote removed` : `#${s.ticket_id} upvoted — score increased`);
         chatPage(id, opts);
       } else if (act === 'cooldown') {
         const on = !chatCooled(s);
         if (!on) forgetCooldown(id);
-        const r = await api(`/api/sessions/${id}/cooldown`, { method: 'POST', body: { on } });
-        toast(on ? `Cooled down${s.ticket_id ? `: back when someone else updates #${s.ticket_id}` : ''}${r?.unvoted ? ' (upvote removed)' : ''}` : 'Cooldown ended');
+        await api(`/api/sessions/${id}/cooldown`, { method: 'POST', body: { on } });
+        toast(on ? `Cooled down${s.ticket_id ? `: back when someone else updates #${s.ticket_id}` : ''}` : 'Cooldown ended');
         chatPage(id, opts);
       } else if (act === 'skill') {
         menuBtn.disabled = true; menuBtn.textContent = 'Drafting skill…';
@@ -3675,8 +3675,8 @@ async function drawNoChatHead(tid) {
   slot.innerHTML = `<div class="row"><label class="model-pick" title="Model for the chat Ask AI starts">Model <select id="tvModel">${modelOptions(models, ticketModel, true)}</select></label>
     <span class="menu-wrap"><button class="btn small" id="chatMenuBtn" aria-haspopup="menu" aria-expanded="false" title="More actions">⋯</button>
       <div class="menu" id="chatMenu" role="menu" hidden>
-        <button role="menuitem" data-act="upvote" title="${upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>
-        <button role="menuitem" data-act="cooldown" title="${cooled ? 'Back to Open' : 'Park it in the Dashboard\'s Cooled tab until someone else updates it'}">${cooled ? '☀ End cooldown' : '❄ Cooldown'}</button>
+        ${cooled ? '' : `<button role="menuitem" data-act="upvote" title="${upvoted ? 'Remove your upvote and score bonus' : 'Add your upvote and score bonus'}">👀 ${upvoted ? 'Remove upvote' : 'Upvote ticket'}</button>`}
+        ${upvoted && !cooled ? '' : `<button role="menuitem" data-act="cooldown" title="${cooled ? 'Back to Open' : 'Park it in the Dashboard\'s Cooled tab until someone else updates it'}">${cooled ? '☀ End cooldown' : '❄ Cooldown'}</button>`}
         <button role="menuitem" data-act="skill" disabled ${noChat}>＋ Create skill from chat</button>
         <hr>
         <button role="menuitem" data-act="delete" class="danger" disabled ${noChat}>🗑 Delete</button>
@@ -3685,12 +3685,12 @@ async function drawNoChatHead(tid) {
   wireMenu($('#chatMenuBtn'), $('#chatMenu'), async (act) => {
     try {
       if (act === 'upvote') {
-        const r = await api(`/api/tickets/${tid}/upvote`, { method: 'POST', body: { upvoted: !upvoted } });
-        toast(upvoted ? `#${tid} upvote removed` : `#${tid} upvoted — score increased${r?.warmed ? ', cooldown ended' : ''}`);
+        await api(`/api/tickets/${tid}/upvote`, { method: 'POST', body: { upvoted: !upvoted } });
+        toast(upvoted ? `#${tid} upvote removed` : `#${tid} upvoted — score increased`);
         drawNoChatHead(tid);
       } else if (act === 'cooldown') {
-        const r = await api(`/api/tickets/${tid}/ignore`, { method: 'POST', body: { ignore: !cooled } });
-        toast(cooled ? `#${tid} back in Open` : `#${tid} cooling down: back when someone else updates it${r?.unvoted ? ' (upvote removed)' : ''}`);
+        await api(`/api/tickets/${tid}/ignore`, { method: 'POST', body: { ignore: !cooled } });
+        toast(cooled ? `#${tid} back in Open` : `#${tid} cooling down: back when someone else updates it`);
         drawNoChatHead(tid);
       }
     } catch (err) { toast(err.message); }
