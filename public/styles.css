@@ -1164,3 +1164,10 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tk-people > .tk-label + .tk-label, .tk-people > .tk-assign + .tk-label { margin-left: 8px; }
 .tk-people > .tk-chips { display: contents; }
 .tk-add.tk-assign { max-width: 240px; }
+/* Public reply: requester + CCs on the same row as Public reply / Internal note */
+.tk-compose-head .tk-cc { flex: 1 1 260px; min-width: 0; padding: 0; border-bottom: none; }
+.tk-compose-head .tk-cc[hidden], .tk-compose-head #tkModeHint[hidden] { display: none; }
+.tk-compose-head .tk-cc-box { min-height: 26px; }
+.tk-compose-head .tk-cc-box input { min-width: 120px; }
+.tk-cc-box .chip.tk-to { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); font-weight: 600; padding-right: 9px; }
+.tk-compose-head .tk-cc .mention-pop { left: 0; }

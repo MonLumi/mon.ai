@@ -744,13 +744,12 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
       <div class="tk-compose-head">
         <div class="seg tk-mode"><button type="button" data-mode="public">Public reply</button><button type="button" data-mode="internal" class="active">Internal note</button></div>
         <span class="sub" id="tkModeHint">Only your team sees it. Type @ to mention a colleague.</span>
+        <div class="tk-cc" id="tkCc" hidden>
+          <div class="tk-cc-box"><span class="chip tk-to" title="Requester${d.requester?.email ? `: ${esc(d.requester.email)}` : ''}">${esc(d.requester?.name || 'Requester')}</span><span id="tkCcChips"></span><input id="tkCcInput" placeholder="CC people or emails" autocomplete="off"></div>
+          <div class="mention-pop" id="tkCcPop" hidden></div>
+        </div>
       </div>
       <div class="macro-applied" id="tkMacroApplied" hidden></div>
-      <div class="tk-cc" id="tkCc" hidden>
-        <span class="tk-label">CC</span>
-        <div class="tk-cc-box"><span id="tkCcChips"></span><input id="tkCcInput" placeholder="Add people or email addresses" autocomplete="off"></div>
-        <div class="mention-pop" id="tkCcPop" hidden></div>
-      </div>
       ${rteToolbar()}
       <div class="tk-note">
         <div class="rte" id="tkEditor" contenteditable="true" role="textbox" aria-multiline="true" title="Drag the lower-right corner to resize; double-click it to reset"></div>
@@ -800,7 +799,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
     $('#tkCompose').classList.toggle('public', m === 'public');
     form.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
     $('#tkCc').hidden = m !== 'public';
-    $('#tkModeHint').textContent = m === 'public' ? `Goes to ${d.requester?.name || 'the requester'}${curCcs.length || ccAdd.length ? ' and the CCs' : ''} by email.` : 'Only your team sees it. Type @ to mention a colleague.';
+    $('#tkModeHint').hidden = m === 'public'; // public: the requester and CCs are shown instead
     editor.dataset.ph = m === 'public' ? 'Public reply to the customer…' : 'Internal note…';
     closePop();
     summarize();
