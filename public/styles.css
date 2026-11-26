@@ -1065,12 +1065,12 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .rte-img.uploading { opacity: .45; outline: 2px dashed var(--accent, #2563eb); outline-offset: 2px; animation: rte-up 1s ease-in-out infinite alternate; }
 @keyframes rte-up { to { opacity: .8; } }
 
-/* Archive / Deep archive rows: Restore and Delete forever on the right */
-.chat-row.bin-row { display: flex; align-items: center; gap: 10px; }
-.chat-row.bin-row .t { flex: 1; min-width: 0; }
+/* Archive / Deep archive rows: the title on its own line (up to two lines), the reason and
+   Restore / Delete forever below it, so the buttons never squeeze the title. */
+.chat-row.bin-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; }
+.chat-row.bin-row .t { grid-column: 1 / -1; min-width: 0; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .bin-acts { display: inline-flex; gap: 6px; flex-shrink: 0; }
 .bin-acts .btn.danger { color: var(--red); }
-.chat-row.bin-row .t { flex: 1 1 30%; }
 .chat-row.bin-row .sub { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Usage board: tables column + pies column, each stacks on its own (no row-coupled gaps) */
 .us-board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 27%); gap: 14px; align-items: start; min-width: 0; }
