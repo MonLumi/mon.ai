@@ -241,6 +241,9 @@ app.get('/api/claude/models', wrap((req) => assistant.listModels({ fresh: req.qu
 app.post('/api/claude/login', wrap(() => assistant.login()));
 app.post('/api/claude/logout', wrap(() => assistant.logout()));
 
+// ---------- Assistant harness overview (Settings → Advanced, read-only) ----------
+app.get('/api/assistant/harness', wrap((req) => assistant.harnessInfo(req.query.org && req.query.org !== 'All' ? orgCode(String(req.query.org)) : 'All')));
+
 // ---------- AI skills ----------
 app.get('/api/skills', wrap(() => skills.list()));
 app.get('/api/skills/:name', wrap((req) => skills.get(req.params.name) || Promise.reject(new Error('Skill not found'))));

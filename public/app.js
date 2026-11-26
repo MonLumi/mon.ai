@@ -3233,14 +3233,15 @@ async function settingsPage(tab = 'clients') {
   tab = { azure: 'clients', workspace: 'general', connections: 'general' }[tab] || tab;
   view.innerHTML = `<div class="page-head settings-head"><div><h1>Settings</h1><div class="sub">Saved to JSON files in /config and applied immediately, no restart needed.</div></div>
     <button class="btn primary" id="settingsSave">Save</button></div>
-    <div class="tabs">${[['clients', 'Clients'], ['general', 'General'], ['claude', 'Claude & model']]
+    <div class="tabs">${[['clients', 'Clients'], ['general', 'General'], ['claude', 'Claude & model'], ['advanced', 'Advanced']]
       .map(([k, l]) => `<button class="${k === tab ? 'active' : ''}" onclick="location.hash='#/settings/${k}'">${l}</button>`).join('')}</div>
     <div id="tab"></div>`;
   $('#settingsSave').onclick = () => {
     const form = $('#tab form');
     if (form) form.requestSubmit(); else toast('Nothing to save on this tab');
   };
-  ({ clients: clientSettings, general: generalSettings, claude: claudeSettings })[tab]?.();
+  $('#settingsSave').hidden = tab === 'advanced'; // read-only tab
+  ({ clients: clientSettings, general: generalSettings, claude: claudeSettings, advanced: advancedSettings })[tab]?.();
 }
 const DEFAULT_ACCOUNT = 'vietanh@dataweavers.com';
 const field = (label, name, value, attrs = '') => `<label class="f">${label}<input name="${name}" value="${esc(value ?? '')}" ${attrs}></label>`;
@@ -3524,6 +3525,93 @@ async function claudeSettings() {
     } catch (err) { toast(err.message); }
   };
   $('#mdlRefresh').onclick = async () => { modelsPromise = api('/api/claude/models?fresh=1'); await modelsPromise; claudeSettings(); };
+}
+
+/**
+ * Settings → Advanced: how the assistant's harness is wired (read-only). The server builds it from the
+ * same options every chat turn uses, so it can't drift from the code. Org changes the prompt and skills.
+ */
+async function advancedSettings(org = 'All') {
+  $('#tab').innerHTML = '<div class="card">Loading…</div>';
+  let h, orgs;
+  try {
+    [h, orgs] = await Promise.all([api(`/api/assistant/harness?org=${encodeURIComponent(org)}`), api('/api/orgs').catch(() => [])]);
+  } catch (e) { if ($('#tab')) $('#tab').innerHTML = `<div class="card"><span class="pill red">Error</span> ${esc(e.message)}</div>`; return; }
+  if (!$('#tab')) return; // left the page while loading
+  const code = (s) => `<code>${esc(s)}</code>`;
+  const codes = (list) => (list.length ? list.map(code).join(' ') : '<span class="sub">none</span>');
+  const kv = (rows) => `<table class="adv-kv">${rows.map(([k, v, hint]) => `<tr><th>${k}</th><td>${v}${hint ? `<div class="sub">${hint}</div>` : ''}</td></tr>`).join('')}</table>`;
+  const scroll = (html) => `<div class="adv-scroll">${html}</div>`;
+  const orgNames = ['All', ...orgs.map((o) => o.org).filter((o) => o && o !== 'All')];
+
+  $('#tab').innerHTML = `<div class="adv">
+    <div class="card"><div class="adv-head"><div><h2>Assistant harness</h2>
+      <p class="sub">How mon.ai runs Claude: the agent loop, its tools and skills, the permission checks and the limits. Read-only, built from the same options every chat reply uses.</p></div>
+      <label class="f adv-org">Chat organization<select id="advOrg">${orgNames.map((o) => `<option ${o === h.org ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></label></div>
+      ${h.warnings.length ? `<div class="adv-warn">${h.warnings.map((w) => `<div><span class="pill ${w.level}">${w.level === 'red' ? 'Risk' : 'Check'}</span> ${esc(w.text)}</div>`).join('')}</div>`
+        : '<p><span class="pill green">All checks pass</span> <span class="sub">Repo roots exist, mon.ai\'s own folder is outside them, and Cloudflare is limited to your account.</span></p>'}
+    </div>
+
+    <div class="card"><h2>Agent loop</h2>
+      <p class="sub">Each message calls the Agent SDK's <code>query()</code>, which runs Claude Code: model → tool call → result → model, until Claude answers or a limit stops it.</p>
+      ${kv([
+        ['Agent SDK', code(h.sdk.version || 'unknown'), `Claude Code binary: ${esc(h.sdk.claudeBin)}`],
+        ['Max turns', code(h.loop.maxTurns), 'Model ↔ tool round trips per reply. The Stop button also ends a reply.'],
+        ['Budget cap', h.loop.budget == null ? '<span class="sub">none</span>' : code(`$${h.loop.budget}`), 'Replies use your Claude subscription, not API credit.'],
+        ['Permission mode', code(h.loop.permissionMode), 'Tools not on the auto-approve list go to mon.ai\'s canUseTool check.'],
+        ['Auto-approved', codes(h.allowedTools)],
+        ['Setting sources', codes(h.loop.settingSources), 'Empty: nothing from CLAUDE.md or your Claude Code settings is loaded.'],
+        ['Default model', `${code(h.model.model)} · effort ${code(h.model.effort)}`, 'A skill\'s model wins when the message runs it; a model picked in a chat header wins over both.'],
+        ['Conversation memory', 'Resumed Claude session per chat', 'Editing a message forks the session; long chats are compacted into a summary.'],
+      ])}
+    </div>
+
+    <div class="card"><h2>System prompt</h2>
+      <p class="sub">Replaces Claude Code's own prompt. Shown for <b>${esc(h.org)}</b>, today.</p>
+      <details><summary>Show the full prompt (${h.systemPrompt.length.toLocaleString()} characters)</summary><pre>${esc(h.systemPrompt)}</pre></details>
+    </div>
+
+    <div class="card"><h2>Built-in tools</h2>
+      <p class="sub">The only Claude Code tools that exist in a chat. Bash, Write, Edit and web tools are not in the list, so Claude can't call them at all.</p>
+      ${scroll(`<table><tr><th>Tool</th><th>Allowed on</th></tr>${h.builtins.map((b) => `<tr><td>${code(b.name)}</td><td>${esc(b.scope)}</td></tr>`).join('')}</table>`)}
+      ${kv([
+        ['Working folder', code(h.filesystem.cwd)],
+        ['Also readable', h.filesystem.additionalDirectories.map(code).join('<br>') || '<span class="sub">none</span>'],
+        ['Repo roots (config)', codes(h.filesystem.configuredRoots)],
+      ])}
+    </div>
+
+    <div class="card"><h2>MCP tools</h2>
+      <p class="sub">${h.mcpServers.map((s) => `Server ${code(s.name)} (${esc(s.type)}, in-process)`).join(', ')}: mon.ai's own code, called as <code>mcp__mon__&lt;name&gt;</code>. Hover a name for its description.</p>
+      ${scroll(`<table><tr><th>Tool</th><th>Reads</th><th>Writes / side effects</th><th>Inputs</th></tr>${h.tools.map((t) => `<tr>
+        <td title="${esc(t.description)}">${code(t.name)}</td><td>${esc(t.reads)}</td>
+        <td>${t.writes ? `<span class="pill amber">effect</span> ${esc(t.writes)}` : '<span class="sub">none</span>'}</td>
+        <td class="sub">${t.params.map(esc).join(', ') || '—'}</td></tr>`).join('')}</table>`)}
+    </div>
+
+    <div class="card"><h2>Skills</h2>
+      <p class="sub">Instructions Claude loads into its own context when relevant, or when you type /name. Folder: ${code(h.skillsRoot)}. <a href="#/skills">Edit skills</a></p>
+      ${scroll(`<table><tr><th>Skill</th><th>Org</th><th>Model</th><th>Effort</th><th>In ${esc(h.org)} chats</th></tr>${h.skills.map((s) => `<tr>
+        <td title="${esc(s.description)}">${code(s.name)}</td><td>${esc(s.org || 'all')}</td>
+        <td>${esc(s.model || 'default')}</td><td>${esc(s.effort || 'default')}</td>
+        <td>${s.enabled ? '<span class="pill green">on</span>' : '<span class="pill">off</span>'}</td></tr>`).join('')}</table>`)}
+    </div>
+
+    <div class="card"><h2>Read-only guards</h2>
+      ${kv([
+        ['Azure CLI', `Allowed verbs: ${codes(h.guards.azure.readVerbs)}`, esc(h.guards.azure.extra)],
+        ['Azure blocked words', `<div class="adv-chips">${codes(h.guards.azure.denyVerbs)}</div>`],
+        ['Cloudflare', `Read-only API token${h.guards.cloudflare.zoneAllowList ? ' · zones limited to the configured account' : ' · <span class="pill amber">no zone limit</span>'}`],
+        ['Zendesk', esc(h.guards.zendesk)],
+        ['Files', esc(h.guards.files)],
+      ])}
+    </div>
+
+    <div class="card"><h2>Not used</h2>
+      ${kv(h.notUsed.map((n) => [esc(n.name), `<span class="sub">${esc(n.why)}</span>`]))}
+    </div>
+  </div>`;
+  $('#advOrg').onchange = (e) => advancedSettings(e.target.value);
 }
 
 // ---------------- notifications (Zendesk's bell) ----------------
