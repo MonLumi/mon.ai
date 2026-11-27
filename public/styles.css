@@ -1344,3 +1344,12 @@ body.rte-sizing-col, body.rte-sizing-row { user-select: none; }
 .chart-foot { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding: 0 14px 10px; font-size: 12px; }
 .chart-foot details summary { cursor: pointer; color: var(--muted); }
 .chart-foot pre { margin: 6px 0 0; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+/* Client knowledge: profile editor (Settings → Clients) and "Remember for <client>" chat cards */
+.client-card details.knowledge { margin: 10px 0 2px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--bg); }
+.client-card details.knowledge > summary { cursor: pointer; }
+.client-card details.knowledge textarea { width: 100%; margin-top: 8px; font-size: 12.5px; line-height: 1.45; resize: vertical; min-height: 180px; box-sizing: border-box; }
+.fact-card .fact-text { margin-top: 4px; white-space: pre-wrap; }
+.fact-card.dismissed { opacity: .6; }
+.fact-card .fact-edit { display: grid; gap: 6px; margin-top: 6px; }
+.fact-card .fact-edit textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
+.fact-card .fact-edit input { max-width: 240px; }

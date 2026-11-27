@@ -18,6 +18,7 @@ import * as charts from './lib/charts.js';
 import * as notify from './lib/notify.js';
 import * as site24x7 from './lib/site24x7.js';
 import * as squadcast from './lib/squadcast.js';
+import * as clients from './lib/clients.js';
 
 const PORT = Number(process.env.PORT || 80);
 const HOST = process.env.HOST || '127.0.0.1'; // loopback only, never exposed to the network
@@ -208,6 +209,19 @@ app.post('/api/repos/scan', wrap(() => git.scan()));
 app.post('/api/repos/pull', wrap((req) => git.pull(String(req.body.path || ''))));
 app.post('/api/repos/check', wrap((req) => git.checkBehind(String(req.body.path || ''))));
 app.post('/api/repos/open', wrap((req) => git.openInVSCode(String(req.body.path || ''))));
+
+// ---------- Client profiles (config/clients/<CODE>.md) ----------
+app.get('/api/clients/profiles', wrap(() => ({ dir: clients.DIR, template: clients.TEMPLATE('CODE'), profiles: clients.list().map((p) => ({ ...p, text: clients.get(p.code) })) })));
+app.put('/api/clients/profiles/:code', wrap((req) => {
+  if (req.body.renameFrom) clients.rename(String(req.body.renameFrom), req.params.code);
+  const r = clients.save(req.params.code, String(req.body.text ?? ''));
+  bus.emit('event', { type: 'clients:updated', data: { code: r.code } });
+  return r;
+}));
+// A suggest_client_fact card: Save (optionally edited) or Dismiss.
+app.post('/api/facts/:factId', wrap((req) => assistant.resolveFact(String(req.params.factId).slice(0, 80), {
+  action: req.body.action === 'save' ? 'save' : 'dismiss', fact: req.body.fact, section: req.body.section, client: req.body.client,
+})));
 
 // ---------- Settings (hot-reloaded) ----------
 const EDITABLE = ['azure', 'workspace', 'secrets'];

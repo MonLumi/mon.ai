@@ -2634,6 +2634,8 @@ function describeTool(t) {
     case 'offer_git_pull': return { icon: '⎇', label: 'Checking for new commits', detail: short(lastPart(i.repo || '')) };
     case 'git_log': return { icon: '⎇', label: 'Reading git history', detail: short(lastPart(i.repo || i.path)) };
     case 'propose_plan': return { icon: '📝', label: 'Writing a plan', detail: short(i.title || '') };
+    case 'client_profile': return { icon: '🏷', label: i.client ? `Reading the ${i.client} profile` : 'Reading every client profile', detail: '' };
+    case 'suggest_client_fact': return { icon: '🏷', label: `Suggesting a fact for ${i.client || 'a client'}`, detail: short(i.fact || '') };
     case 'Read': return { icon: '📄', label: `Reading ${lastPart(i.file_path)}`, detail: short(i.file_path, 90) };
     case 'Grep': return { icon: '🔎', label: `Searching code for “${short(i.pattern, 40)}”`, detail: short(i.path || i.glob || '') };
     case 'Glob': return { icon: '📁', label: 'Finding files', detail: short(i.pattern) };
@@ -3108,6 +3110,61 @@ document.addEventListener('click', async (e) => {
   } catch (err) { toast(err.message); }
 });
 
+// ---------- Client facts (suggest_client_fact): "Remember for <client>" cards ----------
+// The assistant only suggests; the fact goes into config/clients/<CODE>.md when you click Save.
+const factDone = new Map(); // fact id -> resolved fact, so a repaint mid-reply keeps the card's state
+function factCards(list = []) {
+  return list.map((f0) => {
+    const f = factDone.get(f0.id) || f0;
+    const done = f.status !== 'suggested';
+    return `<div class="pull-card fact-card ${f.status === 'saved' ? 'ok' : f.status === 'dismissed' ? 'dismissed' : ''}" data-fact="${esc(JSON.stringify(f))}">
+    <div class="signin-main">
+      <span class="signin-icon">🏷</span>
+      <div style="min-width:0;flex:1">
+        <div class="signin-title">${f.status === 'saved' ? 'Saved to' : f.status === 'dismissed' ? 'Dismissed for' : 'Remember for'} ${esc(f.client)} <span class="pill">${esc(f.section)}</span>${f.replaces ? ' <span class="pill amber">replaces a line</span>' : ''}</div>
+        <div class="fact-text" data-fact-text>${esc(f.fact)}</div>
+        ${f.replaces ? `<div class="signin-sub">Instead of: <s>${esc(f.replaces)}</s></div>` : ''}
+        ${f.evidence ? `<div class="signin-sub">Seen in: ${esc(f.evidence)}</div>` : ''}
+      </div>
+    </div>
+    ${done ? (f.status === 'saved' ? `<div class="signin-actions"><a class="btn small" href="#/settings/clients" data-fact-open="${esc(f.savedTo || f.client)}">Open profile</a></div>` : '') : `<div class="signin-actions">
+      <button type="button" class="btn small primary" data-fact-save>Save</button>
+      <button type="button" class="btn small" data-fact-edit>Edit</button>
+      <button type="button" class="btn small" data-fact-dismiss>Dismiss</button>
+    </div>`}
+  </div>`;
+  }).join('');
+}
+document.addEventListener('click', async (e) => {
+  const open = e.target.closest('[data-fact-open]');
+  if (open) { sessionStorage.setItem('mon.clientFocus', open.dataset.factOpen); return; }
+  const btn = e.target.closest('[data-fact-save], [data-fact-edit], [data-fact-dismiss]');
+  if (!btn) return;
+  const card = btn.closest('.fact-card');
+  const f = JSON.parse(card.dataset.fact);
+  const text = card.querySelector('[data-fact-text]');
+  if (btn.hasAttribute('data-fact-edit')) {
+    text.outerHTML = `<div class="fact-edit"><input data-fact-section value="${esc(f.section)}" title="Profile heading" placeholder="Section"><textarea data-fact-text rows="2">${esc(f.fact)}</textarea></div>`;
+    btn.remove();
+    card.querySelector('textarea').focus();
+    return;
+  }
+  const save = btn.hasAttribute('data-fact-save');
+  const edited = card.querySelector('textarea[data-fact-text]');
+  for (const b of card.querySelectorAll('button')) b.disabled = true;
+  try {
+    const r = await api(`/api/facts/${encodeURIComponent(f.id)}`, { method: 'POST', body: save
+      ? { action: 'save', fact: edited ? edited.value : f.fact, section: card.querySelector('[data-fact-section]')?.value || f.section }
+      : { action: 'dismiss' } });
+    factDone.set(f.id, r.fact);
+    card.outerHTML = factCards([r.fact]);
+    if (save) toast(`Saved to the ${r.saved?.code || f.client} profile${r.saved?.replaced ? ' (line replaced)' : ''}`);
+  } catch (err) {
+    toast(err.message);
+    for (const b of card.querySelectorAll('button')) b.disabled = false;
+  }
+});
+
 // ---------- Git pull (fast-forward only): repo lists and chat cards ----------
 // Same button everywhere: [data-git-pull=path]. The chat card (offer_git_pull) adds a Continue button.
 function pullBtn(r) {
@@ -3190,6 +3247,7 @@ function assistantHtml(c, models, running = false) {
     ${signinCards(c.signins)}
     ${pullCards(c.pulls)}
     ${chartCards(c.charts)}
+    ${factCards(c.facts)}
     ${planCard(c.plan)}
     ${next.length ? `<div class="next-steps"><div class="next-title">Next actions <span class="sub">pick one; it runs as the next message with that skill's model</span></div>${next.map((n, i) => `<button type="button" class="next-btn ${i === 0 ? 'primary' : ''}" data-next="${esc(n.cmd)}" title="Send ${esc(n.cmd)}">
         <span class="next-cmd">▶ ${esc(n.cmd.split(/\s+/)[0])}<span class="next-args">${esc(n.cmd.split(/\s+/).slice(1).join(' '))}</span></span>${n.why ? `<span class="next-why">${esc(n.why)}</span>` : ''}</button>`).join('')}</div>` : ''}
@@ -3648,15 +3706,15 @@ async function chatPage(id, opts = {}) {
     }
     inner.insertAdjacentHTML('beforeend', `${userMsgHtml({ text, attachments: atts })}<div class="msg assistant"></div>`);
     const box = inner.lastElementChild;
-    const live = { segments: [''], tools: [], signins: [], pulls: [], charts: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
+    const live = { segments: [''], tools: [], signins: [], pulls: [], charts: [], facts: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
     const nearBottom = () => msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
     const paint = (running) => {
       const stick = nearBottom();
       const parts = live.segments.map((x) => x.trim()).filter(Boolean);
       const lastOpen = live.segments.at(-1).trim();
       const c = running
-        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, signins: live.signins, pulls: live.pulls, charts: live.charts, plan: live.plan, startedAt: live.startedAt }
-        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, signins: live.signins, pulls: live.pulls, charts: live.charts, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
+        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, signins: live.signins, pulls: live.pulls, charts: live.charts, facts: live.facts, plan: live.plan, startedAt: live.startedAt }
+        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, signins: live.signins, pulls: live.pulls, charts: live.charts, facts: live.facts, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
       // the step list stays as you left it (open or closed) while it runs, and folds up when done
       const was = box.querySelector('.worklog')?.open;
       box.innerHTML = assistantHtml(c, models, running) + live.errors.join('');
@@ -3688,6 +3746,7 @@ async function chatPage(id, opts = {}) {
           else if (type === 'segment') live.segments.push('');
           else if (type === 'tool') live.tools.push(data);
           else if (type === 'plan') live.plan = data;
+          else if (type === 'fact') live.facts.push(data);
           else if (type === 'signin') live.signins.push(data);
           else if (type === 'chart') { if (!live.charts.includes(data.id)) live.charts.push(data.id); }
           else if (type === 'pull') live.pulls = [...live.pulls.filter((x) => x.path !== data.path), data];
@@ -4183,21 +4242,26 @@ async function settingsPage(tab = 'clients') {
 const DEFAULT_ACCOUNT = 'vietanh@dataweavers.com';
 const field = (label, name, value, attrs = '') => `<label class="f">${label}<input name="${name}" value="${esc(value ?? '')}" ${attrs}></label>`;
 
+const KNOWLEDGE_HINT = '# CODE\n\n## Projects\n- Sitecore XP and Sitecore AI; prod domains: …\n\n## Hosting & edge\n- Domains point straight to Front Door; static assets on a cdn. domain in Cloudflare\n\n## Access\n- Prod Azure write access needs a PIM activation first\n\n## Gotchas\n- …';
+/** "12 facts" (bullet lines) or "empty", for a client's knowledge profile. */
+const knowledgeCount = (text) => { const n = String(text || '').split('\n').filter((l) => /^\s*[-*]\s/.test(l)).length; return n ? `${n} fact${n === 1 ? '' : 's'}` : 'empty'; };
+
 /** One card per client: the names it goes by, VPN, Azure subscriptions and ADO. */
 async function clientSettings() {
-  const [{ value: az }, { value: ws }, cf] = await Promise.all([api('/api/config/azure'), api('/api/config/workspace'), api('/api/cloudflare/zones').catch(() => null)]);
+  const [{ value: az }, { value: ws }, cf, kb] = await Promise.all([api('/api/config/azure'), api('/api/config/workspace'), api('/api/cloudflare/zones').catch(() => null), api('/api/clients/profiles').catch(() => ({ profiles: [] }))]);
   const allZones = (cf?.zones || []).map((z) => z.name).sort((a, b) => a.localeCompare(b));
   // Build the client list from Azure profiles, alias targets and Cloudflare zone owners.
   const byCode = new Map();
   const client = (code) => {
     const k = code.toLowerCase();
-    if (!byCode.has(k)) byCode.set(k, { code, aliases: [], zones: [], profile: null });
+    if (!byCode.has(k)) byCode.set(k, { code, aliases: [], zones: [], profile: null, knowledge: '' });
     return byCode.get(k);
   };
   for (const p of az.profiles || []) client(p.org).profile = p;
   for (const [name, code] of Object.entries(ws.orgAliases || {})) { const cl = client(code); if (name !== code) cl.aliases.push(name); }
   for (const [code, zones] of Object.entries(ws.clientZones || {})) client(code).zones = [...(zones || [])];
   for (const [code, names] of Object.entries(ws.clientMonitoring || {})) client(code).monitoring = [...(names || [])];
+  for (const p of kb.profiles || []) client(p.code).knowledge = p.text || '';
   const clients = [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code));
   const defaultAccount = az.defaultAccount || DEFAULT_ACCOUNT;
 
@@ -4221,6 +4285,10 @@ async function clientSettings() {
       </div>
       <label class="f">Monitoring names <span class="sub">Words that pick this client's Squadcast services, comma separated (part of the name is enough). Empty: the client name. Only needed when the service isn't named after the client.</span>
         <input name="monitoring" value="${esc((cl.monitoring || []).join(', '))}" placeholder="e.g. ACU, acu.edu.au"></label>
+      <details class="knowledge">
+        <summary><b>Knowledge</b> <span class="sub"><span data-kb-count>${knowledgeCount(cl.knowledge)}</span> · what is specific to this client (projects, prod domains, hosting &amp; edge, access, gotchas). The assistant reads it in this client's chats.</span></summary>
+        <textarea name="knowledge" class="mono" rows="14" spellcheck="false" placeholder="${esc(KNOWLEDGE_HINT)}" data-orig="${esc(cl.knowledge || '')}">${esc(cl.knowledge || '')}</textarea>
+      </details>
       <div class="azure-part">
         <!-- fixed two-column rows so each subscription's ID and name sit side by side -->
         <div class="grid2" style="margin-top:10px">
@@ -4287,6 +4355,13 @@ async function clientSettings() {
     const txt = $('.zone-add-text', c);
     if (txt) txt.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); add(txt.value.trim().toLowerCase()); } };
   }
+  // Opened from a "Saved to" fact card: jump to that client's knowledge.
+  const focus = sessionStorage.getItem('mon.clientFocus');
+  if (focus) {
+    sessionStorage.removeItem('mon.clientFocus');
+    const c = [...document.querySelectorAll('.client-card')].find((x) => $('[name=org]', x).value.toLowerCase() === focus.toLowerCase());
+    if (c) { $('details.knowledge', c).open = true; setTimeout(() => c.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50); }
+  }
   const count = () => { $('#clCount').textContent = `${document.querySelectorAll('.client-card').length} clients`; };
   document.querySelectorAll('.client-card').forEach(wire);
   $('#clAdd').onclick = () => {
@@ -4297,7 +4372,7 @@ async function clientSettings() {
   };
   $('#clFilter').oninput = (e) => {
     const q = e.target.value.trim().toLowerCase();
-    for (const c of document.querySelectorAll('.client-card')) c.hidden = !!q && !hit(q, ...[...c.querySelectorAll('input')].map((i) => i.value.replace(/,/g, ' ')));
+    for (const c of document.querySelectorAll('.client-card')) c.hidden = !!q && !hit(q, ...[...c.querySelectorAll('input, textarea')].map((i) => i.value.replace(/,/g, ' ')));
   };
 
   $('#clForm').onsubmit = async (e) => {
@@ -4340,7 +4415,21 @@ async function clientSettings() {
       const [{ value: azNow }, { value: wsNow }] = await Promise.all([api('/api/config/azure'), api('/api/config/workspace')]);
       await api('/api/config/workspace', { method: 'PUT', body: { ...wsNow, orgAliases, clientZones, clientMonitoring } });
       await api('/api/config/azure', { method: 'PUT', body: { ...azNow, profiles } });
-      toast(`Saved ${seen.size} clients`);
+      // Knowledge: only profiles you changed (or whose client was renamed) are written.
+      let kbSaved = 0;
+      for (const c of document.querySelectorAll('.client-card')) {
+        const ta = $('[name=knowledge]', c);
+        const code = $('[name=org]', c).value.trim();
+        const orig = $('[name=org]', c).dataset.orig;
+        const renamed = !!orig && orig !== code;
+        if (ta.value === ta.dataset.orig && !renamed) continue;
+        await api(`/api/clients/profiles/${encodeURIComponent(code)}`, { method: 'PUT', body: { text: ta.value, ...(renamed ? { renameFrom: orig } : {}) } });
+        ta.dataset.orig = ta.value;
+        if (renamed) $('[name=org]', c).dataset.orig = code;
+        $('[data-kb-count]', c).textContent = knowledgeCount(ta.value);
+        kbSaved++;
+      }
+      toast(`Saved ${seen.size} clients${kbSaved ? ` and ${kbSaved} knowledge profile${kbSaved === 1 ? '' : 's'}` : ''}`);
       loadSidebar();
     } catch (err) { toast(err.message); }
   };
