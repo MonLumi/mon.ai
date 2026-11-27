@@ -25,7 +25,7 @@ Ask only for inputs that are missing and cannot be inferred.
 ### 0. Context and access
 1. If a ticket number is given, read it with `zendesk_ticket` to get the client, hosts, symptom and time.
 2. `zendesk_search` `type:ticket organization:<ORG> created>2days` to find other reports from the same time. Also search past solved tickets for 'slow', 'spike' or '5xx' for this client and start from their outcome if one matches.
-3. `azure_profiles`: if the client's CLI login shows `valid=false`. Ask the user to allow login and refresh the token. Continue with Cloudflare.
+3. `azure_profiles` (pass `org`): if the client's `signedIn` is `expired` or `no`, ask the user to allow login and refresh the token. Continue with Cloudflare.
    Pass `org: "<ORG>"` on every `azure_cli` call: it runs in that client's tenant and subscription. The CLI's "current" account being another tenant is normal and never a reason to skip Azure.
 4. `cloudflare_zones`: confirm the zone for the client.
 ### 0.5 Narrow the window with Site24x7 and Squadcast (one call, then at most two)
