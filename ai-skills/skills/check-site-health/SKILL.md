@@ -14,7 +14,7 @@ All tools are read-only. Never change anything. Give exact commands for the user
 ## Input
 - **Client org** (Zendesk organization / Cloudflare zone / Azure profile name). Required.
 - **Environment** (default: prod).
-- **Incident window** (default: last 3h, 5-minute buckets). Accept AEST or UTC; always state both.
+- **Incident window**: from `incident_timeline` (step 0), else what the user or ticket says, else the last 3h. 5-minute buckets. Accept AEST or UTC; always state both.
 - **Symptom** (optional): slow, 5xx, 403s, fully down; one site or all sites. A ticket number can supply all of these.
 
 Ask only for inputs that are missing and cannot be inferred.
@@ -27,6 +27,11 @@ Ask only for inputs that are missing and cannot be inferred.
 3. `azure_profiles`: if the client's CLI login shows `valid=false`. Ask the user to allow login and refresh the token. Continue with Cloudflare.
    Pass `org: "<ORG>"` on every `azure_cli` call: it runs in that client's tenant and subscription. The CLI's "current" account being another tenant is normal and never a reason to skip Azure.
 4. `cloudflare_zones`: confirm the zone for the client.
+5. **Narrow the window**: `incident_timeline` with the ticket number (or `org` and a rough from / to). It lines up Site24x7 outages (when external checks saw the site down, from which locations, why), Squadcast incidents (Azure Monitor alerts: which resource and rule fired, when it resolved) and the client's tickets.
+   - Use its `suggestedWindow` as the incident window for every query below, and say which signal it came from (e.g. "Site24x7 saw www.x.com down 02:47–03:12Z; the SQL DTU alert fired at 02:41Z").
+   - An Azure alert that fired *before* the site went down usually points at the cause: check that resource first.
+   - To pin the start / end to the minute, or see whether only some locations failed: `site24x7_poll_log` for the monitor on that UTC date.
+   - If a source needs a sign-in (notes), say so in one line and carry on with the rest. No timeline events at all: fall back to the ticket's time or the last 3h.
 
 ### 1. Find the resources (one `azure_cli` call)
 `az resource list --subscription <sub> --query "[?type=='Microsoft.Web/sites' || type=='Microsoft.Web/serverFarms' || type=='Microsoft.Sql/servers/elasticpools' || type=='Microsoft.Cdn/profiles' || type=='Microsoft.Insights/components'].{name:name,type:type,rg:resourceGroup,id:id}" -o json`

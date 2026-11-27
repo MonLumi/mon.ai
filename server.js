@@ -16,6 +16,8 @@ import * as skills from './lib/skills.js';
 import * as uploads from './lib/uploads.js';
 import * as charts from './lib/charts.js';
 import * as notify from './lib/notify.js';
+import * as site24x7 from './lib/site24x7.js';
+import * as squadcast from './lib/squadcast.js';
 
 const PORT = Number(process.env.PORT || 80);
 const HOST = process.env.HOST || '127.0.0.1'; // loopback only, never exposed to the network
@@ -158,6 +160,13 @@ app.post('/api/notify', wrap((req) => {
   const origin = `${req.protocol}://${req.headers.host}`; // an allowed host, checked above
   return notify.toast({ title: String(req.body.title || 'mon.ai'), body: String(req.body.body || ''), url: chatId ? `${origin}/#/chat/${chatId}` : origin });
 }));
+
+// ---------- External monitoring: Site24x7 (browser sign-in) and Squadcast (API token) ----------
+app.get('/api/site24x7/auth', wrap(() => site24x7.info()));
+app.get('/api/site24x7/check', wrap(() => site24x7.check()));
+app.post('/api/site24x7/login', wrap(() => site24x7.start()));
+app.post('/api/site24x7/logout', wrap(() => { site24x7.clear(); return site24x7.info(); }));
+app.get('/api/squadcast/check', wrap(() => squadcast.check()));
 
 // ---------- Cloudflare ----------
 app.get('/api/cloudflare/zones', wrap(async (req) => {

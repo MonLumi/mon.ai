@@ -2593,6 +2593,13 @@ function describeTool(t) {
     case 'cloudflare_get': return { icon: '☁', label: 'Cloudflare API', detail: short(i.path) };
     case 'cloudflare_security_events': return { icon: '🛡', label: 'Cloudflare security events', detail: short(`${[i.action, i.clientRequestPath || i.path, i.since && `since ${i.since}`].filter(Boolean).join(' · ')}${zone}`) };
     case 'cloudflare_security_top': return { icon: '🛡', label: `Top Cloudflare events by ${(i.by || []).join(', ')}`, detail: short(zone.slice(3)) };
+    case 'incident_timeline': return { icon: '⏱', label: 'Building the incident timeline', detail: short([i.ticket && `#${i.ticket}`, i.org, i.from && `${i.from} → ${i.to || 'now'}`].filter(Boolean).join(' · ')) };
+    case 'site24x7_monitors': return { icon: '📡', label: 'Site24x7 monitor status', detail: short([i.org, (i.status || []).join(', ')].filter(Boolean).join(' · ')) };
+    case 'site24x7_outages': return { icon: '📡', label: 'Site24x7 outages', detail: short([i.org || i.monitorId, i.from && `${i.from} → ${i.to || 'now'}`].filter(Boolean).join(' · ')) };
+    case 'site24x7_poll_log': return { icon: '📡', label: 'Site24x7 check log', detail: short(`${i.monitorId} · ${i.date}`) };
+    case 'site24x7_get': return { icon: '📡', label: 'Site24x7 API', detail: short(i.path) };
+    case 'squadcast_incidents': return { icon: '🚨', label: 'Squadcast incidents', detail: short([i.org, i.from && `${i.from} → ${i.to || 'now'}`].filter(Boolean).join(' · ')) };
+    case 'squadcast_get': return { icon: '🚨', label: 'Squadcast API', detail: short(i.path) };
     case 'azure_profiles': return { icon: '🔑', label: 'Checking Azure sign-ins', detail: '' };
     case 'azure_cli': {
       const a = i.args || [];
@@ -2925,8 +2932,71 @@ function paintSigninRows() {
   }
 }
 
+/** Site24x7 (browser sign-in) or Squadcast (API token) card, shown when one of their tools was refused. */
+function serviceSigninCard(si) {
+  const s24 = si.service === 'site24x7';
+  const busy = s24 && ['running', 'refreshing'].includes(site24x7Auth?.login?.status);
+  return `<div class="signin-card" data-signin="${esc(JSON.stringify(si))}" data-service-signin="${esc(si.service)}">
+    <div class="signin-main">
+      <span class="signin-icon">🔑</span>
+      <div><div class="signin-title">${s24 ? 'Site24x7 sign-in needed' : 'Squadcast token needed'}</div>
+      <div class="signin-sub" data-signin-msg>${s24
+        ? 'mon.ai reads Site24x7 with your browser sign-in, and it is missing or expired. Sign in opens a separate Edge window: sign in with Zoho as usual and it closes by itself.'
+        : 'Squadcast refused the API token (missing, expired or revoked). Paste a new one from your Squadcast profile → API Token in Settings › General.'}</div></div>
+    </div>
+    <div class="signin-actions">
+      ${s24
+        ? `<button type="button" class="btn small signin-btn ${busy ? 'waiting' : ''}" data-service-login="site24x7">${busy ? '<span class="spinner"></span> Waiting for sign-in…' : 'Sign in to Site24x7'}</button>`
+        : '<a class="btn small" href="#/settings/general">Open Settings</a>'}
+      <button type="button" class="btn small" data-service-check="${esc(si.service)}" title="Check the sign-in now">${s24 ? "I've signed in" : "I've added it"}</button>
+      <button type="button" class="btn small primary" data-signin-retry hidden>↻ Retry</button>
+    </div>
+  </div>`;
+}
+
+/** The service works now: flip its chat cards to "Retry". */
+function markServiceOk(service, who) {
+  const label = service === 'site24x7' ? 'Site24x7' : 'Squadcast';
+  for (const card of document.querySelectorAll(`.signin-card[data-service-signin="${service}"]`)) {
+    if (card.classList.contains('ok')) continue;
+    card.classList.add('ok');
+    card.querySelector('.signin-title').textContent = `${label} connected${who ? ` · ${who}` : ''}`;
+    card.querySelector('[data-signin-msg]').textContent = `mon.ai can read ${label} again. Retry to let it continue.`;
+    for (const b of card.querySelectorAll('[data-service-login], [data-service-check], a.btn')) b.hidden = true;
+    card.querySelector('[data-signin-retry]').hidden = false;
+  }
+}
+
+let site24x7Auth = null;
+async function serviceCheck(service) {
+  const r = await api(`/api/${service}/check`).catch((e) => ({ ok: false, error: e.message }));
+  if (r.ok) markServiceOk(service, r.user?.name || r.user || '');
+  return r;
+}
+
+document.addEventListener('click', async (e) => {
+  const go = e.target.closest('[data-service-login]');
+  const check = e.target.closest('[data-service-check]');
+  if (!go && !check) return;
+  if (go) {
+    go.disabled = true;
+    try {
+      site24x7Auth = await api('/api/site24x7/login', { method: 'POST', body: {} });
+      go.className = 'btn small signin-btn waiting';
+      go.innerHTML = '<span class="spinner"></span> Waiting for sign-in…';
+      toast('Site24x7: finish signing in in the Edge window that opened; it closes by itself.');
+    } catch (err) { toast(err.message); } finally { go.disabled = false; }
+    return;
+  }
+  check.disabled = true;
+  try {
+    const r = await serviceCheck(check.dataset.serviceCheck);
+    if (!r.ok) check.closest('.signin-card').querySelector('[data-signin-msg]').textContent = `Still not working${r.error ? ` (${r.error})` : ''}.`;
+  } finally { check.disabled = false; }
+});
+
 function signinCards(list = []) {
-  return list.map((si) => `<div class="signin-card" data-signin="${esc(JSON.stringify(si))}">
+  return list.map((si) => si.service ? serviceSigninCard(si) : `<div class="signin-card" data-signin="${esc(JSON.stringify(si))}">
     <div class="signin-main">
       <span class="signin-icon">🔑</span>
       <div><div class="signin-title">Azure sign-in needed · ${esc(si.org)}</div>
@@ -2982,7 +3052,9 @@ document.addEventListener('click', async (e) => {
     if (retry) {
       const box = document.querySelector('#input');
       if (!box || !document.querySelector('#composer')) return;
-      edSet(box, `I've signed in to Azure for ${si.org}. Please retry what you were doing.`);
+      edSet(box, si.service
+        ? `${si.service === 'site24x7' ? "I've signed in to Site24x7" : "I've updated the Squadcast token"}. Please retry what you were doing.`
+        : `I've signed in to Azure for ${si.org}. Please retry what you were doing.`);
       document.querySelector('#composer').requestSubmit();
       return;
     }
@@ -3249,7 +3321,7 @@ async function chatPage(id, opts = {}) {
     <div class="chat-head"><div style="min-width:0">${embedded
       // on the ticket workspace these go into the shared header (which already shows the client and ticket)
       ? `<div class="chat-chips"><span class="pill ai">✦ AI chat</span><span class="pill" title="The assistant can read Zendesk, Cloudflare, Azure/ADO and your local repos, never change them">🔒 read-only</span><span id="chatCostChip"></span>${s.archived_at ? '<span class="pill amber">archived</span>' : ''}</div>`
-      : `<div class="sub"><a href="#/chat">← All chats</a></div><h1>${esc(s.title)}</h1><div class="sub">${isClient ? esc(s.org) : 'General'} · read-only tools: Zendesk, Cloudflare, Azure/ADO, local repos</div>`}</div>
+      : `<div class="sub"><a href="#/chat">← All chats</a></div><h1>${esc(s.title)}</h1><div class="sub">${isClient ? esc(s.org) : 'General'} · read-only tools: Zendesk, Cloudflare, Azure/ADO, Site24x7, Squadcast, local repos</div>`}</div>
       <div class="row"><label class="model-pick" title="Model for this chat">Model <select id="chatModel">${modelOptions(models, s.model || '', s.defaultModel)}</select></label>
         ${hasClient ? `<button class="btn small" id="sideToggle" title="Show or hide the ${esc(s.org)} panel">${esc(s.org)} panel</button>` : ''}
         <span class="menu-wrap"><button class="btn small" id="chatMenuBtn" aria-haspopup="menu" aria-expanded="false" title="More actions">⋯</button>
@@ -4103,6 +4175,7 @@ async function clientSettings() {
   for (const p of az.profiles || []) client(p.org).profile = p;
   for (const [name, code] of Object.entries(ws.orgAliases || {})) { const cl = client(code); if (name !== code) cl.aliases.push(name); }
   for (const [code, zones] of Object.entries(ws.clientZones || {})) client(code).zones = [...(zones || [])];
+  for (const [code, names] of Object.entries(ws.clientMonitoring || {})) client(code).monitoring = [...(names || [])];
   const clients = [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code));
   const defaultAccount = az.defaultAccount || DEFAULT_ACCOUNT;
 
@@ -4124,6 +4197,8 @@ async function clientSettings() {
         <input type="hidden" name="zones" value="${esc((cl.zones || []).join(','))}">
         <div class="zone-chips"></div>
       </div>
+      <label class="f">Monitoring names <span class="sub">Words that pick this client's Site24x7 monitors / monitor groups and Squadcast services, comma separated (part of the name is enough). Empty: the client name and its Cloudflare zones.</span>
+        <input name="monitoring" value="${esc((cl.monitoring || []).join(', '))}" placeholder="e.g. ACU, acu.edu.au"></label>
       <div class="azure-part">
         <!-- fixed two-column rows so each subscription's ID and name sit side by side -->
         <div class="grid2" style="margin-top:10px">
@@ -4193,7 +4268,7 @@ async function clientSettings() {
   const count = () => { $('#clCount').textContent = `${document.querySelectorAll('.client-card').length} clients`; };
   document.querySelectorAll('.client-card').forEach(wire);
   $('#clAdd').onclick = () => {
-    $('#clGrid').insertAdjacentHTML('afterbegin', card({ code: '', aliases: [], zones: [], profile: null, isNew: true }));
+    $('#clGrid').insertAdjacentHTML('afterbegin', card({ code: '', aliases: [], zones: [], monitoring: [], profile: null, isNew: true }));
     const c = $('#clGrid .client-card');
     wire(c); count();
     $('[name=org]', c).focus();
@@ -4208,6 +4283,7 @@ async function clientSettings() {
     const profiles = [];
     const orgAliases = {};
     const clientZones = {};
+    const clientMonitoring = {};
     const seen = new Set();
     for (const c of document.querySelectorAll('.client-card')) {
       const g = (n) => $(`[name=${n}]`, c).value.trim();
@@ -4222,6 +4298,8 @@ async function clientSettings() {
       for (const name of names) orgAliases[name] = code;
       const zones = zonesOf(c);
       if (zones.length) clientZones[code] = zones;
+      const mon = g('monitoring').split(',').map((s) => s.trim()).filter(Boolean);
+      if (mon.length) clientMonitoring[code] = mon;
       const adv = $('[name=adoAdvanced]', c).checked;
       const custom = $('[name=customSignIn]', c).checked;
       const p = {
@@ -4238,7 +4316,7 @@ async function clientSettings() {
     try {
       // Re-read the files so fields edited on other tabs are kept.
       const [{ value: azNow }, { value: wsNow }] = await Promise.all([api('/api/config/azure'), api('/api/config/workspace')]);
-      await api('/api/config/workspace', { method: 'PUT', body: { ...wsNow, orgAliases, clientZones } });
+      await api('/api/config/workspace', { method: 'PUT', body: { ...wsNow, orgAliases, clientZones, clientMonitoring } });
       await api('/api/config/azure', { method: 'PUT', body: { ...azNow, profiles } });
       toast(`Saved ${seen.size} clients`);
       loadSidebar();
@@ -4252,6 +4330,14 @@ async function generalSettings() {
     api('/api/config/azure'), api('/api/config/workspace'), api('/api/config/secrets'), api('/api/zendesk/auth'),
   ]);
   const z = sec.zendesk, c = sec.cloudflare;
+  const s24 = sec.site24x7 || { enabled: false, dc: 'net.au' }, sq = sec.squadcast || { apiToken: '', region: 'eu' };
+  const sa = site24x7Auth = await api('/api/site24x7/auth').catch(() => null);
+  const sStatus = !s24.enabled ? '<span class="pill">Off</span>'
+    : sa?.signedIn ? `<span class="pill green">Signed in${sa.user?.name ? ` as ${esc(sa.user.name)}` : ''}</span>`
+    : sa?.login?.status === 'running' ? '<span class="pill amber">Waiting for sign-in in the Edge window…</span>'
+    : sa?.login?.status === 'refreshing' ? '<span class="pill amber">Reconnecting in the background…</span>'
+    : `<span class="pill red">Not signed in</span>${sa?.login?.error ? ` <span class="sub">${esc(sa.login.error)}</span>` : ''}`;
+  const S24_DCS = [['net.au', 'Australia (site24x7.net.au)'], ['com', 'US (site24x7.com)'], ['eu', 'EU (site24x7.eu)'], ['in', 'India (site24x7.in)'], ['uk', 'UK (site24x7.uk)'], ['ca', 'Canada (site24x7.ca)'], ['jp', 'Japan (site24x7.jp)']];
   const zStatus = za.signedIn ? `<span class="pill green">Signed in as ${esc(za.user?.name || '')}</span>`
     : za.login?.status === 'running' ? '<span class="pill amber">Waiting for sign-in in the Edge window…</span>'
     : za.login?.status === 'refreshing' ? '<span class="pill amber">Reconnecting in the background…</span>'
@@ -4281,6 +4367,23 @@ async function generalSettings() {
       ${field('API token (read-only)', 'cftoken', c.apiToken, 'type="password" autocomplete="off"')}
       ${field('Account ID (only zones in this account are shown)', 'cfacct', c.accountId, 'placeholder="Dataweavers Enterprise account ID"')}
     </div></fieldset>
+    <fieldset><legend>Site24x7</legend>
+      <div class="row" style="margin-bottom:10px">${sStatus}
+        <button type="button" class="btn small primary" id="s24Login" ${['running', 'refreshing'].includes(sa?.login?.status) ? 'disabled' : ''}>${sa?.signedIn ? 'Sign in again' : 'Sign in with browser'}</button>
+        ${sa?.signedIn ? '<button type="button" class="btn small danger" id="s24Logout">Sign out</button>' : ''}</div>
+      <div class="sub" style="margin-bottom:10px">External uptime checks. No API token: a separate Edge window (a mon.ai profile) opens Site24x7; sign in with Zoho as usual (SSO/MFA) and it closes by itself. Read-only.</div>
+      <div class="fields">
+        <label class="f">Use Site24x7<span class="row" style="gap:6px"><input type="checkbox" name="s24on" ${s24.enabled ? 'checked' : ''}> Enabled</span></label>
+        <label class="f">Data centre<select name="s24dc">${S24_DCS.map(([v, l]) => `<option value="${v}" ${s24.dc === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      </div></fieldset>
+    <fieldset><legend>Squadcast</legend>
+      <div class="row" style="margin-bottom:10px"><span id="sqStatus">${sq.apiToken ? '<span class="pill">Checking…</span>' : '<span class="pill">No token</span>'}</span>
+        <button type="button" class="btn small" id="sqTest">Save &amp; test</button></div>
+      <div class="sub" style="margin-bottom:10px">Incident hub for Azure Monitor alerts (SolarWinds Incident Response). Paste the API token from your Squadcast profile → API Token. Read-only calls.</div>
+      <div class="fields">
+        ${field('API token', 'sqtoken', sq.apiToken, 'type="password" autocomplete="off"')}
+        <label class="f">Region<select name="sqregion"><option value="eu" ${sq.region !== 'us' ? 'selected' : ''}>EU (incidents.eu-01)</option><option value="us" ${sq.region === 'us' ? 'selected' : ''}>US (incidents.na-01)</option></select></label>
+      </div></fieldset>
     <fieldset><legend>Notifications</legend>
       <div class="row">
         <label class="row" style="gap:6px"><input type="checkbox" id="notifyToggle" ${notifyOn() ? 'checked' : ''}> Windows notification when an AI reply finishes and you are not looking at that chat</label>
@@ -4313,6 +4416,8 @@ async function generalSettings() {
     await api('/api/config/secrets', { method: 'PUT', body: {
       zendesk: { subdomain: f.zsub.value.trim(), email: f.zemail.value.trim(), apiToken: f.ztoken.value, pollSeconds: Number(f.zpoll.value) || 60 },
       cloudflare: { apiToken: f.cftoken.value, accountId: f.cfacct.value.trim() },
+      site24x7: { enabled: f.s24on.checked, dc: f.s24dc.value },
+      squadcast: { apiToken: f.sqtoken.value, region: f.sqregion.value },
     } });
   };
   f.onsubmit = async (e) => {
@@ -4327,6 +4432,24 @@ async function generalSettings() {
     } catch (err) { toast(err.message); }
   };
   $('#zdLogout')?.addEventListener('click', async () => { await api('/api/zendesk/logout', { method: 'POST', body: {} }); generalSettings(); });
+  $('#s24Login').onclick = async () => {
+    try {
+      f.s24on.checked = true;
+      if (!s24.enabled || f.s24dc.value !== s24.dc) await save(); // the sign-in needs the data centre
+      await api('/api/site24x7/login', { method: 'POST', body: {} });
+      generalSettings();
+    } catch (err) { toast(err.message); }
+  };
+  $('#s24Logout')?.addEventListener('click', async () => { await api('/api/site24x7/logout', { method: 'POST', body: {} }); generalSettings(); });
+  const sqCheck = async () => {
+    const r = await api('/api/squadcast/check').catch((e) => ({ ok: false, configured: true, error: e.message }));
+    $('#sqStatus').innerHTML = !r.configured ? '<span class="pill">No token</span>'
+      : r.ok ? `<span class="pill green">Connected${r.user ? ` as ${esc(r.user)}` : ''}</span>`
+      : `<span class="pill red">Not working</span> <span class="sub">${esc(r.error || '')}</span>`;
+    if (r.ok) markServiceOk('squadcast', r.user || '');
+  };
+  $('#sqTest').onclick = async () => { try { await save(); await sqCheck(); } catch (err) { toast(err.message); } };
+  if (sq.apiToken) sqCheck();
 }
 
 async function claudeSettings() {
@@ -4975,6 +5098,19 @@ es.addEventListener('zendesk:auth', (e) => {
   else if (!d.signedIn && d.login?.status === 'needs-login') toast('Zendesk is signed out: click Sign in to Zendesk on the Dashboard');
   if (state.route.name === 'settings' && state.route.id === 'general') generalSettings();
   refreshDashboard().catch(() => {});
+});
+es.addEventListener('site24x7:auth', (e) => {
+  const d = JSON.parse(e.data);
+  const was = site24x7Auth?.login?.status;
+  site24x7Auth = d;
+  if (d.signedIn && d.login?.status === 'ok') {
+    markServiceOk('site24x7', d.user?.name || '');
+    if (was === 'running') toast(`Site24x7: signed in${d.user?.name ? ` as ${d.user.name}` : ''}`);
+  } else if (d.login?.status === 'error') toast(`Site24x7 sign-in: ${d.login.error}`);
+  if (!['running', 'refreshing'].includes(d.login?.status)) {
+    for (const b of document.querySelectorAll('[data-service-login].waiting')) { b.className = 'btn small signin-btn'; b.textContent = 'Sign in to Site24x7'; }
+  }
+  if (state.route.name === 'settings' && state.route.id === 'general') generalSettings();
 });
 es.addEventListener('claude:usage', (e) => { usageData = JSON.parse(e.data); drawUsage(); });
 es.addEventListener('usage:updated', (e) => {
