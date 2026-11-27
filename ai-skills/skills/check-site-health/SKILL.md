@@ -1,6 +1,6 @@
 ---
 name: check-site-health
-description: Quick health check when a client site is slow, down, timing out or returning 5xx: finds any request spike on Cloudflare / Azure Front Door / App Service, checks Sitecore CD, CM, headless rendering and SQL elastic pool load at the same moment, says whether it is an attack, a client event, a bot crawl, a Sitecore publish or an unstable platform, and proposes next steps. Use when asked to check system health, look for a traffic or request spike, or explain why a site is slow or down.
+description: Quick health check when a client site is slow, down, timing out or returning 5xx: narrows the incident window with Site24x7 outages (external checks) and Squadcast (Azure Monitor alerts), finds any request spike on Cloudflare / Azure Front Door / App Service, checks Sitecore CD, CM, headless rendering and SQL elastic pool load at the same moment, says whether it is an attack, a client event, a bot crawl, a Sitecore publish or an unstable platform, and proposes next steps. Use when asked to check system health, look for a traffic or request spike, or explain why a site is slow or down.
 mon-model: opus
 mon-effort: medium
 mon-category: Investigation
@@ -14,7 +14,8 @@ All tools are read-only. Never change anything. Give exact commands for the user
 ## Input
 - **Client org** (Zendesk organization / Cloudflare zone / Azure profile name). Required.
 - **Environment** (default: prod).
-- **Incident window**: from `incident_timeline` (step 0), else what the user or ticket says, else the last 3h. 5-minute buckets. Accept AEST or UTC; always state both.
+- **Affected site**: host or URL (e.g. `www.example.com`). Needed for the Site24x7 check; take it from the ticket if possible.
+- **Incident window**: from Site24x7 / Squadcast (step 0.5), else what the user or ticket says, else the last 3h. 5-minute buckets. Accept AEST or UTC; always state both.
 - **Symptom** (optional): slow, 5xx, 403s, fully down; one site or all sites. A ticket number can supply all of these.
 
 Ask only for inputs that are missing and cannot be inferred.
@@ -27,11 +28,23 @@ Ask only for inputs that are missing and cannot be inferred.
 3. `azure_profiles`: if the client's CLI login shows `valid=false`. Ask the user to allow login and refresh the token. Continue with Cloudflare.
    Pass `org: "<ORG>"` on every `azure_cli` call: it runs in that client's tenant and subscription. The CLI's "current" account being another tenant is normal and never a reason to skip Azure.
 4. `cloudflare_zones`: confirm the zone for the client.
-5. **Narrow the window**: `incident_timeline` with the ticket number (or `org` and a rough from / to). It lines up Site24x7 outages (when external checks saw the site down, from which locations, why), Squadcast incidents (Azure Monitor alerts: which resource and rule fired, when it resolved) and the client's tickets.
-   - Use its `suggestedWindow` as the incident window for every query below, and say which signal it came from (e.g. "Site24x7 saw www.x.com down 02:47–03:12Z; the SQL DTU alert fired at 02:41Z").
-   - An Azure alert that fired *before* the site went down usually points at the cause: check that resource first.
-   - To pin the start / end to the minute, or see whether only some locations failed: `site24x7_poll_log` for the monitor on that UTC date.
-   - If a source needs a sign-in (notes), say so in one line and carry on with the rest. No timeline events at all: fall back to the ticket's time or the last 3h.
+### 0.5 Narrow the window with Site24x7 and Squadcast (one call, then at most two)
+Only for this incident: one site, one client. Never list or scan all monitors or all incidents.
+1. `incident_timeline` with `ticket` (or `org` + a rough `from` / `to`) and `host` = the affected site. It returns, in time order:
+   - **Site24x7 outages** of that site: when external checks (as a real user) saw it down or in trouble, and the reason (timeout, 5xx, "Too many redirects", SSL, DNS). `notes` names the monitors checked; if none matched, try `site24x7_monitors` with `search` = the domain without www or a path (e.g. `qbe.com/au`).
+   - **Squadcast incidents** for the client: Azure Monitor alerts (rule, resource, first / last fired, still open or resolved). Repeats of the same alert are grouped.
+   - The client's tickets in the window.
+2. Use `suggestedWindow` as **the incident window** for every query below (instead of a default 3h), with a baseline of the same window yesterday / last week. Say where it came from, e.g. "Site24x7 saw www.x.com down 02:47–03:12Z; Squadcast: SQL pool DTU alert fired 02:41Z".
+3. Pin it down when it matters (one call): `site24x7_poll_log` for the monitor (`monitorId` from the timeline) on the UTC date, with `from` / `to` around the outage. It shows the first and last failed check per location, the status code, response time and resolved IP.
+   - **All locations failed** → the site was down for everyone: origin, Front Door or Cloudflare.
+   - **Only some locations** → regional: network path, a Cloudflare / Front Door PoP or DNS, rarely the origin.
+   - **Status 614 / "Too many redirects"** → redirect loop (Cloudflare SSL mode, Front Door / app redirect rules). **Timeout / connection errors** → origin unreachable or overloaded. **5xx** → origin or Front Door error. **SSL / DNS errors** → certificate or DNS change.
+4. Read the order of events:
+   - An Azure alert that fired **before** the site went down usually points at the cause: check that resource first (its `resource` tag is the Azure resource name).
+   - Alerts only **after** the outage started are usually symptoms.
+   - Site24x7 down but **no** Azure alert and origin metrics normal → look at the edge (Cloudflare, Front Door, DNS, certificate) before the platform.
+   - An alert that fires again and again ("fired 9×") for hours is chronic: mention it, but don't let it set the window unless it lines up with the reported problem.
+5. If a source needs a sign-in or token (`notes`), say so in one line (the chat shows a card) and carry on with the rest. No Site24x7 / Squadcast events at all: fall back to the ticket's time or the last 3h.
 
 ### 1. Find the resources (one `azure_cli` call)
 `az resource list --subscription <sub> --query "[?type=='Microsoft.Web/sites' || type=='Microsoft.Web/serverFarms' || type=='Microsoft.Sql/servers/elasticpools' || type=='Microsoft.Cdn/profiles' || type=='Microsoft.Insights/components'].{name:name,type:type,rg:resourceGroup,id:id}" -o json`
@@ -114,6 +127,7 @@ Use `--interval PT5M` with `--aggregation Maximum Average` over the same window.
 | **Sitecore publish / internal** | No traffic spike; CM busy; pool log_write or physical_data_read spike, then CD CPU rises (cache clear); short-lived |
 | **Unstable platform** | No traffic spike, but 5xx or latency up; one hot instance; restart, swap or deployment in the activity log; memory creeping; origin unhealthy; SQL workers piling up |
 | **Upstream dependency** | CD and rendering healthy, but timeouts on one backend, API or path |
+| **Edge / DNS / certificate** | Site24x7 down (often all locations) with redirect, SSL or DNS errors, while Front Door and origin metrics are normal and no Azure alert fired |
 
 Rules:
 - Never call it an attack from volume alone. An attack needs concentration or abnormal patterns.
@@ -122,8 +136,8 @@ Rules:
 
 ## Output
 1. **Verdict:** one line with confidence (high, medium or low).
-2. **Timeline table** in 5- or 15-minute buckets, with UTC and AEST, and the spike marked. Columns: Front Door requests, 5xx, Cloudflare events, CD CPU, rendering CPU, pool CPU and workers.
-3. **Evidence:** 3–6 bullets with numbers compared with the baseline. Name the live stack and any data source that could not be checked.
+2. **Timeline table** in 5- or 15-minute buckets, with UTC and AEST, and the spike marked. Columns: Site24x7 (up / down, locations failing), Squadcast alerts fired, Front Door requests, 5xx, Cloudflare events, CD CPU, rendering CPU, pool CPU and workers.
+3. **Evidence:** 3–6 bullets with numbers compared with the baseline. Start with when the outage began and ended for users (Site24x7) and which Azure alerts fired before / during it (Squadcast, with links). Name the live stack and any data source that could not be checked.
 4. **Next steps:** ordered. Give each an owner and the exact command or click path. Mark each one *user runs* and, where relevant, *needs client approval*. Choose from:
    - **Attack:** add a Cloudflare custom rule to block or managed-challenge the IP, ASN or JA4. Or add a rate-limit rule on the hot path (for example 100 req/min per IP on `/search`). In an emergency, set 'I'm Under Attack' for that host, time-boxed, then revert. If traffic bypasses Cloudflare, check the Front Door WAF and origin access restrictions.
    - **Client event:** scale out the plan with `az appservice plan update -g <rg> -n <plan> --number-of-workers <n+2>`. Raise the pool if SQL is above 80% with `az sql elastic-pool update -g <rg> -s <server> -n <pool> --capacity <next>`. Check the cache hit ratio for the hot pages. Ask the client for upcoming event dates so we can scale in advance.

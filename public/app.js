@@ -2601,12 +2601,12 @@ function describeTool(t) {
     case 'cloudflare_get': return { icon: '☁', label: 'Cloudflare API', detail: short(i.path) };
     case 'cloudflare_security_events': return { icon: '🛡', label: 'Cloudflare security events', detail: short(`${[i.action, i.clientRequestPath || i.path, i.since && `since ${i.since}`].filter(Boolean).join(' · ')}${zone}`) };
     case 'cloudflare_security_top': return { icon: '🛡', label: `Top Cloudflare events by ${(i.by || []).join(', ')}`, detail: short(zone.slice(3)) };
-    case 'incident_timeline': return { icon: '⏱', label: 'Building the incident timeline', detail: short([i.ticket && `#${i.ticket}`, i.org, i.from && `${i.from} → ${i.to || 'now'}`].filter(Boolean).join(' · ')) };
-    case 'site24x7_monitors': return { icon: '📡', label: 'Site24x7 monitor status', detail: short([i.org, (i.status || []).join(', ')].filter(Boolean).join(' · ')) };
-    case 'site24x7_outages': return { icon: '📡', label: 'Site24x7 outages', detail: short([i.org || i.monitorId, i.from && `${i.from} → ${i.to || 'now'}`].filter(Boolean).join(' · ')) };
+    case 'incident_timeline': return { icon: '⏱', label: 'Building the incident timeline', detail: short([i.ticket && `#${i.ticket}`, i.org, i.host, i.from && `${i.from} → ${i.to || 'now'}`].filter(Boolean).join(' · ')) };
+    case 'site24x7_monitors': return { icon: '📡', label: 'Site24x7 monitor status', detail: short([i.search, (i.status || []).join(', ')].filter(Boolean).join(' · ')) };
+    case 'site24x7_outages': return { icon: '📡', label: 'Site24x7 outages', detail: short([i.host || i.monitorId, i.from && `${i.from} → ${i.to || 'now'}`].filter(Boolean).join(' · ')) };
     case 'site24x7_poll_log': return { icon: '📡', label: 'Site24x7 check log', detail: short(`${i.monitorId} · ${i.date}`) };
     case 'site24x7_get': return { icon: '📡', label: 'Site24x7 API', detail: short(i.path) };
-    case 'squadcast_incidents': return { icon: '🚨', label: 'Squadcast incidents', detail: short([i.org, i.from && `${i.from} → ${i.to || 'now'}`].filter(Boolean).join(' · ')) };
+    case 'squadcast_incidents': return { icon: '🚨', label: 'Squadcast incidents', detail: short([i.org, i.search, i.from && `${i.from} → ${i.to || 'now'}`].filter(Boolean).join(' · ')) };
     case 'squadcast_get': return { icon: '🚨', label: 'Squadcast API', detail: short(i.path) };
     case 'azure_profiles': return { icon: '🔑', label: 'Checking Azure sign-ins', detail: '' };
     case 'azure_cli': {
@@ -4205,7 +4205,7 @@ async function clientSettings() {
         <input type="hidden" name="zones" value="${esc((cl.zones || []).join(','))}">
         <div class="zone-chips"></div>
       </div>
-      <label class="f">Monitoring names <span class="sub">Words that pick this client's Site24x7 monitors / monitor groups and Squadcast services, comma separated (part of the name is enough). Empty: the client name and its Cloudflare zones.</span>
+      <label class="f">Monitoring names <span class="sub">Words that pick this client's Squadcast services, comma separated (part of the name is enough). Empty: the client name. Only needed when the service isn't named after the client.</span>
         <input name="monitoring" value="${esc((cl.monitoring || []).join(', '))}" placeholder="e.g. ACU, acu.edu.au"></label>
       <div class="azure-part">
         <!-- fixed two-column rows so each subscription's ID and name sit side by side -->
