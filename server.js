@@ -19,6 +19,7 @@ import * as notify from './lib/notify.js';
 import * as site24x7 from './lib/site24x7.js';
 import * as squadcast from './lib/squadcast.js';
 import * as clients from './lib/clients.js';
+import * as actions from './lib/actions.js';
 
 const PORT = Number(process.env.PORT || 80);
 const HOST = process.env.HOST || '127.0.0.1'; // loopback only, never exposed to the network
@@ -202,6 +203,16 @@ app.get('/api/azure/:org/ado', wrap(async (req) => {
     errors: [workItems.reason?.message, pullRequests.reason?.message].filter(Boolean),
   };
 }));
+
+// ---------- Plans: steps you run one at a time (lib/actions.js) ----------
+// The step is read from the saved chat message, never from the request: only the step number travels.
+const stepNo = (req) => { const n = Number(req.params.step); if (!Number.isInteger(n) || n < 0 || n > 50) throw new Error('Bad step'); return n; };
+app.get('/api/plans/:id', wrap((req) => actions.planState(req.params.id)));
+app.post('/api/plans/:id/steps/:step/run', wrap((req) => actions.runStep(req.params.id, stepNo(req), { vpnConfirmed: req.body.vpnConfirmed === true })));
+app.post('/api/plans/:id/steps/:step/cancel', wrap((req) => actions.cancelStep(req.params.id, stepNo(req))));
+app.post('/api/plans/:id/steps/:step/mark', wrap((req) => actions.markStep(req.params.id, stepNo(req), String(req.body.status || ''), String(req.body.note || ''))));
+app.get('/api/actions/history', wrap((req) => actions.history({ limit: req.query.limit })));
+app.get('/api/actions/open-temp', wrap(() => actions.openTemp()));
 
 // ---------- Git ----------
 app.get('/api/repos', wrap(() => git.list()));

@@ -2711,6 +2711,7 @@ function describeTool(t) {
     case 'zendesk_ticket': return { icon: '🎫', label: `Reading ticket #${i.id ?? i.ticketId ?? ''}`, detail: '' };
     case 'zendesk_search': return { icon: '🔎', label: 'Searching Zendesk', detail: short(i.query) };
     case 'past_chats': return { icon: '🗂', label: 'Searching past chats', detail: short(i.query || i.org || '') };
+    case 'past_runs': return { icon: '🗂', label: 'Searching past runs', detail: short(i.query || '') };
     case 'daily_performance': return { icon: '📈', label: 'Checking performance', detail: '' };
     case 'cloudflare_zones': return { icon: '☁', label: 'Listing Cloudflare zones', detail: '' };
     case 'cloudflare_get': return { icon: '☁', label: 'Cloudflare API', detail: short(i.path) };
@@ -2968,38 +2969,145 @@ function paramsHtml(params) {
   return `<div class="plan-params">${keys.map((k) => paramHtml(k, params[k], params)).join('')}</div>`;
 }
 
+// Params the command block already shows (azure_cli): not repeated as rows.
+const PLAN_HIDDEN_PARAMS = new Set(['args', 'subscription', 'org', 'env', 'tempAccess', 'waitSeconds']);
 function planCard(p) {
   if (!p?.steps?.length) return '';
   const steps = p.steps.map((s, i) => {
     const [icon, kind] = PLAN_ICONS[s.action] || ['•', s.action];
     const risk = s.risk || (s.action === 'zendesk_public_reply' ? 'high' : '');
-    return `<li class="plan-step">
+    const params = Object.fromEntries(Object.entries(s.params || {}).filter(([k]) => s.action !== 'azure_cli' || !PLAN_HIDDEN_PARAMS.has(k)));
+    const env = s.action === 'azure_cli' && s.params?.env ? `<span class="pill ${s.params.env === 'prod' ? 'red' : ''}">${s.params.env === 'prod' ? 'Prod' : 'NonProd'}</span>` : '';
+    const temp = s.params?.tempAccess === 'open' ? '<span class="pill amber">opens temporary access</span>' : s.params?.tempAccess === 'close' ? '<span class="pill green">closes temporary access</span>' : '';
+    return `<li class="plan-step" data-step="${i}">
       <span class="plan-num">${i + 1}</span>
       <div class="plan-main">
-        <div class="plan-line"><span class="plan-kind">${icon} ${esc(kind)}</span>${s.target ? `<span class="pill">${esc(s.target)}</span>` : ''}${risk ? `<span class="pill ${risk === 'high' ? 'red' : risk === 'medium' ? 'amber' : 'green'}">${esc(risk)} risk</span>` : ''}${s.reversible === false ? '<span class="pill amber">can\'t undo</span>' : ''}</div>
+        <div class="plan-line"><span class="plan-kind">${icon} ${esc(kind)}</span>${env}${s.target ? `<span class="pill">${esc(s.target)}</span>` : ''}${risk ? `<span class="pill ${risk === 'high' ? 'red' : risk === 'medium' ? 'amber' : 'green'}">${esc(risk)} risk</span>` : ''}${s.reversible === false ? '<span class="pill amber">can\'t undo</span>' : ''}${temp}<span class="plan-status" data-step-status></span></div>
         <div class="plan-summary">${esc(s.summary)}</div>
-        ${s.params && Object.keys(s.params).length ? paramsHtml(s.params) : ''}
+        ${Object.keys(params).length ? paramsHtml(params) : ''}
         ${s.content ? `<div class="plan-content">${esc(s.content)}</div>` : ''}
         ${s.why ? `<div class="plan-why">${esc(s.why)}</div>` : ''}
+        <div class="plan-run" data-step-run></div>
       </div></li>`;
   }).join('');
   const list = (title, xs) => (xs?.length ? `<div class="plan-extra"><b>${title}</b><ul>${xs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '');
-  return `<div class="plan-card" data-plan="${esc(JSON.stringify(p))}">
-    <div class="plan-head"><span>📝 Plan · ${p.steps.length} step${p.steps.length === 1 ? '' : 's'}</span><span class="pill">${p.org ? `${esc(p.org)} · ` : ''}${p.ticketId ? `#${esc(p.ticketId)} · ` : ''}not run</span></div>
+  return `<div class="plan-card" data-plan="${esc(JSON.stringify(p))}" ${p.id ? `data-plan-id="${esc(p.id)}"` : ''}>
+    <div class="plan-head"><span>📝 Plan · ${p.steps.length} step${p.steps.length === 1 ? '' : 's'}</span><span class="pill" data-plan-pill>${p.org ? `${esc(p.org)} · ` : ''}${p.ticketId ? `#${esc(p.ticketId)} · ` : ''}not run</span></div>
     <div class="plan-title">${esc(p.title)}</div>
     ${p.goal ? `<div class="plan-goal">${esc(p.goal)}</div>` : ''}
+    <div class="plan-temp" data-plan-temp hidden></div>
     <ol class="plan-steps">${steps}</ol>
-    ${list('Checked', p.checks)}${list('Assumptions to confirm', p.assumptions)}
+    ${list('Checked', p.checks)}${list('Assumptions to confirm', p.assumptions)}${list('Based on', p.basedOn)}
     <div class="plan-foot">
-      <span class="plan-note">Nothing has been run. mon.ai only proposes plans for now.</span>
+      <span class="plan-note">Nothing runs on its own: an Azure CLI step runs only when you click its ▶ Run, as you (your Azure CLI sign-in). Every action is logged on the <a href="#/history">History</a> page.</span>
       <span class="plan-actions">
         <button type="button" class="btn" data-plan-revise>✎ Revise</button>
         <button type="button" class="copy-btn" data-plan-copy>${COPY_ICON}<span>Copy plan</span></button>
-        <button type="button" class="btn primary" disabled title="Running plans comes in the next stage">▶ Approve &amp; run</button>
       </span>
     </div>
   </div>`;
 }
+
+// ---------- Running a plan, one step at a time (lib/actions.js) ----------
+const STEP_STATUS = {
+  pending: ['', ''], running: ['amber', 'Running'], waiting_signin: ['amber', 'Waiting for sign-in'],
+  done: ['green', '✓ Done'], manual_done: ['green', '✓ Done by you'], skipped: ['', 'Skipped'], failed: ['red', '✗ Failed'],
+};
+const STEP_HINTS = {
+  pim: 'Azure refused it: your role is probably not active. <a href="https://portal.azure.com/#view/Microsoft_Azure_PIMCommon/ActivationMenuBlade/~/azurerbac" target="_blank" rel="noopener">Activate PIM ↗</a> for this subscription, wait a minute, then Retry.',
+  signin: 'The Azure CLI sign-in for this client is missing or expired. Retry opens the sign-in terminal and waits for you.',
+  timeout: 'It took too long (slow over VPN?). Check the resource before running it again; a long job can run with --no-wait plus a verify step.',
+  restart: 'mon.ai restarted while this ran. Check the resource before running it again.',
+};
+const elapsedText = (iso) => { const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`; };
+setInterval(() => document.querySelectorAll('[data-elapsed]').forEach((el) => { el.textContent = elapsedText(el.dataset.elapsed); }), 1000);
+
+const planStates = new Map(); // planId → last state from the server
+async function hydratePlan(card) {
+  let st;
+  try { st = await api(`/api/plans/${encodeURIComponent(card.dataset.planId)}`); } catch { return; } // not saved yet (reply still streaming)
+  planStates.set(card.dataset.planId, st);
+  paintPlan(card, st);
+}
+function paintPlan(card, st) {
+  const p = JSON.parse(card.dataset.plan);
+  const finished = st.steps.filter((s) => ['done', 'manual_done', 'skipped'].includes(s.status)).length;
+  const pill = card.querySelector('[data-plan-pill]');
+  if (pill) {
+    const label = st.outcome ? { done: '✓ done', partial: 'partly done', skipped: 'skipped' }[st.outcome] : finished ? `${finished}/${st.steps.length} finished` : 'not run';
+    pill.textContent = `${p.org ? `${p.org} · ` : ''}${p.ticketId ? `#${p.ticketId} · ` : ''}${label}`;
+    pill.className = `pill ${st.outcome === 'done' ? 'green' : finished ? 'amber' : ''}`;
+  }
+  const temp = card.querySelector('[data-plan-temp]');
+  if (temp) {
+    temp.hidden = !st.tempOpen;
+    temp.innerHTML = st.tempOpen ? `⚠ Temporary rule <code>${esc(st.tempRule || '')}</code> for ${esc(st.tempIp || '')} is open. Its closing step stays available until it is closed.` : '';
+  }
+  for (const s of st.steps) {
+    const li = card.querySelector(`.plan-step[data-step="${s.step}"]`);
+    if (!li) continue;
+    const [cls, label] = STEP_STATUS[s.status] || ['', s.status];
+    const busy = s.status === 'running' || s.status === 'waiting_signin';
+    li.dataset.status = s.status;
+    li.querySelector('[data-step-status]').innerHTML = label ? `<span class="pill ${cls}">${esc(label)}${busy ? ` <span data-elapsed="${esc(s.startedAt || new Date().toISOString())}">${elapsedText(s.startedAt || new Date().toISOString())}</span>` : ''}</span>` : '';
+    const btns = [];
+    if (s.canRun) btns.push(`<button type="button" class="btn small primary" data-step-act="run">${s.status === 'failed' ? '↻ Retry' : '▶ Run'}</button>`);
+    if (busy) btns.push('<button type="button" class="btn small" data-step-act="cancel">Cancel</button>');
+    if ((s.canMark || s.status === 'failed') && !busy) {
+      btns.push('<button type="button" class="btn small" data-step-act="manual_done" title="You did this step yourself, outside mon.ai">✓ I did it myself</button>');
+      if (s.temp !== 'close' || !st.tempOpen) btns.push('<button type="button" class="btn small" data-step-act="skipped">Skip</button>');
+    }
+    const waiting = !s.canMark && !busy && !['done', 'manual_done', 'skipped'].includes(s.status) ? '<span class="sub">Waits for the steps before it.</span>' : '';
+    li.querySelector('[data-step-run]').innerHTML = `
+      ${s.command ? `<div class="pp-code plan-cmd"><pre>${esc(s.command)}</pre>${smallCopy(s.command)}</div>` : ''}
+      ${s.blocked ? `<div class="plan-blocked">⛔ ${esc(s.blocked)}</div>` : ''}
+      ${s.status === 'waiting_signin' ? '<div class="plan-hint">A sign-in terminal opened. Finish signing in there (MFA too): mon.ai checks every few seconds, then runs the step.</div>' : ''}
+      ${s.error && s.status === 'failed' ? `<div class="plan-err"><pre>${esc(s.error.slice(0, 1500))}</pre></div>${STEP_HINTS[s.hint] ? `<div class="plan-hint">${STEP_HINTS[s.hint]}</div>` : ''}` : ''}
+      ${s.output && s.status !== 'failed' ? `<details class="pp-block plan-out" ${busy ? 'open' : ''}><summary>Output${s.finishedAt ? ` · ${esc(new Date(s.finishedAt).toLocaleTimeString())}` : ''}</summary><div class="pp-text">${esc(s.output)}</div></details>` : ''}
+      ${btns.length || waiting ? `<div class="plan-step-actions">${btns.join('')}${waiting}</div>` : ''}`;
+  }
+}
+// Plan cards appear whenever a chat renders: fill each one in once.
+new MutationObserver(() => {
+  document.querySelectorAll('.plan-card[data-plan-id]:not([data-hydrated])').forEach((c) => { c.dataset.hydrated = '1'; hydratePlan(c); });
+}).observe(document.body, { childList: true, subtree: true });
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-step-act]');
+  if (!b) return;
+  const card = b.closest('.plan-card');
+  const n = Number(b.closest('.plan-step').dataset.step);
+  const id = card.dataset.planId;
+  const p = JSON.parse(card.dataset.plan);
+  const s = p.steps[n];
+  const url = `/api/plans/${encodeURIComponent(id)}/steps/${n}`;
+  const act = b.dataset.stepAct;
+  try {
+    if (act === 'run') {
+      const prod = s.params?.env !== 'nonprod';
+      const undo = s.params?.rollback ? (Array.isArray(s.params.rollback) ? `az ${s.params.rollback.join(' ')}` : String(s.params.rollback)) : s.reversible === false ? 'Not reversible' : '—';
+      const ok = await confirmDialog({
+        title: `Run step ${n + 1}?`,
+        intro: `${esc(s.summary)}<div class="pp-code plan-cmd" style="margin-top:8px"><pre>${esc(planStates.get(id)?.steps[n]?.command || '')}</pre></div>`,
+        rows: [['Client', esc(s.params?.org || p.org || '—')], ['Environment', prod ? '<b>Prod</b>' : 'NonProd'], ['Risk', esc(s.risk || '—')], ['Undo', esc(undo)]],
+        ok: '▶ Run', danger: prod && s.risk === 'high',
+      });
+      if (!ok) return;
+      b.disabled = true;
+      const r = await api(`${url}/run`, { method: 'POST', body: {} });
+      if (r.needVpn) {
+        const go = await confirmDialog({ title: `${s.params?.org || p.org || 'This client'} requires VPN`, intro: `mon.ai ${r.vpn.connected === false ? 'can\'t see' : 'couldn\'t check'} <b>${esc(r.vpn.name)}</b>. Connect it first, then press Run.`, ok: '▶ Run' });
+        if (go) await api(`${url}/run`, { method: 'POST', body: { vpnConfirmed: true } });
+      }
+    } else if (act === 'cancel') {
+      await api(`${url}/cancel`, { method: 'POST', body: {} });
+    } else {
+      if (act === 'manual_done' && !(await confirmDialog({ title: 'Mark as done by you?', intro: `Step ${n + 1}: ${esc(s.summary)}<br>It is logged as done by you, outside mon.ai.`, ok: 'Mark done' }))) return;
+      await api(`${url}/mark`, { method: 'POST', body: { status: act } });
+    }
+  } catch (err) { toast(err.message); }
+  hydratePlan(card);
+});
 document.addEventListener('click', async (e) => {
   const copy = e.target.closest('[data-plan-copy]');
   const revise = e.target.closest('[data-plan-revise]');
@@ -5277,6 +5385,34 @@ async function loadChatUsage(sid) {
   if (cb) cb.onclick = () => chatCompact?.sid === sid && chatCompact.run();
 }
 
+// ---------------- History: plans you ran (audit log) ----------------
+async function refreshTempBadge() {
+  const el = $('#tempBadge');
+  if (!el) return;
+  const open = await api('/api/actions/open-temp').catch(() => []);
+  el.hidden = !open.length;
+  el.textContent = open.length ? `⚠ ${open.length}` : '';
+}
+refreshTempBadge();
+
+async function historyPage() {
+  const h = await api('/api/actions/history?limit=200');
+  if (state.route.name !== 'history') return;
+  const outcome = (r) => (r.outcome === 'done' ? '<span class="pill green">✓ done</span>' : r.outcome === 'partial' ? '<span class="pill amber">partly done</span>' : r.outcome === 'skipped' ? '<span class="pill">skipped</span>' : '<span class="pill amber">in progress</span>');
+  const stepLine = (s, i) => {
+    const [cls, label] = STEP_STATUS[s.status] || ['', s.status];
+    return `<li><span class="pill ${cls}">${esc(label || 'not run')}</span> ${i + 1}. ${esc(s.summary)}${s.at ? ` <span class="sub">${esc(new Date(s.at).toLocaleString())}</span>` : ''}
+      ${s.command ? `<div class="pp-code plan-cmd"><pre>${esc(s.command)}</pre>${smallCopy(s.command)}</div>` : ''}${s.error && s.status === 'failed' ? `<div class="plan-err"><pre>${esc(s.error.split('\n')[0])}</pre></div>` : ''}</li>`;
+  };
+  view.innerHTML = `<div class="page-head"><div><h1>History</h1>
+      <div class="sub">Plans you ran from mon.ai, step by step. The full audit log is <code>${esc(h.auditFile)}</code> (one JSON line per event; open it in any editor, or <code>Get-Content -Tail 50</code>). Azure also records every change under your account in each subscription's Activity log.</div></div></div>
+    ${h.openTemp.length ? `<div class="notice warn"><b>Temporary access still open</b><ul>${h.openTemp.map((t) => `<li><code>${esc(t.rule)}</code> for ${esc(t.ip || '')} on ${esc(t.target || t.org || '')} since ${esc(new Date(t.openedAt).toLocaleString())} · <a href="#/chat/${esc(t.sessionId)}">open the plan to close it</a></li>`).join('')}</ul></div>` : ''}
+    ${h.runs.length ? h.runs.map((r) => `<div class="card hist-run">
+      <div class="row" style="justify-content:space-between;gap:8px"><div><b>${esc(r.title)}</b> ${outcome(r)} ${r.org ? `<span class="pill">${esc(r.org)}</span>` : ''}${r.ticketId ? ` <span class="pill">#${esc(r.ticketId)}</span>` : ''}</div>
+        <div class="sub">${esc(new Date(r.updatedAt).toLocaleString())} · <a href="#/chat/${esc(r.sessionId)}">chat →</a></div></div>
+      <ol class="hist-steps">${r.steps.map(stepLine).join('')}</ol></div>`).join('') : '<div class="empty">Nothing run yet. Plans appear here once you run, skip or mark one of their steps.</div>'}`;
+}
+
 // ---------------- router ----------------
 function parseRoute() {
   const [name = '', id, sub] = location.hash.replace(/^#\/?/, '').split('/');
@@ -5293,6 +5429,7 @@ async function route() {
     else if (name === 'chat') await chatPage(id);
     else if (name === 'ticket') await ticketPage(id, state.route.sub);
     else if (name === 'usage') await usagePage();
+    else if (name === 'history') await historyPage();
     else if (name === 'clients' || name === 'azure') await azurePage();
     else if (name === 'cloudflare') location.hash = '#/clients';
     else if (name === 'repos') await reposPage();
@@ -5341,6 +5478,12 @@ es.addEventListener('notifications:updated', (e) => {
 });
 es.addEventListener('zendesk:status', () => refreshDashboard().catch(() => {}));
 es.addEventListener('sessions:updated', () => loadSidebar());
+es.addEventListener('plan:update', (e) => {
+  const { planId } = JSON.parse(e.data);
+  document.querySelectorAll('.plan-card[data-plan-id]').forEach((c) => { if (c.dataset.planId === planId) hydratePlan(c); });
+  refreshTempBadge();
+  if (state.route.name === 'history') historyPage();
+});
 es.addEventListener('clients:updated', () => kbRefresh());
 // A solved ticket was reopened on Zendesk: its chat came back from the Archive.
 es.addEventListener('chats:restored', (e) => {

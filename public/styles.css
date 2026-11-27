@@ -392,6 +392,25 @@ label.f textarea { padding: 7px 9px; border: 1px solid var(--border); border-rad
 .plan-note { font-size: 12px; color: var(--muted); }
 .plan-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .plan-actions .btn[disabled] { opacity: .5; cursor: not-allowed; }
+/* running a plan step by step */
+.plan-status { margin-left: auto; }
+.plan-step[data-status="done"] .plan-num, .plan-step[data-status="manual_done"] .plan-num { background: var(--green-soft, var(--accent-soft)); color: var(--green, var(--accent)); }
+.plan-step[data-status="failed"] .plan-num { background: var(--red-soft); color: var(--red); }
+.plan-step[data-status="skipped"] .plan-main { opacity: .6; }
+.plan-run:empty { display: none; }
+.plan-run { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.plan-cmd pre, .msg.assistant .plan-cmd pre { white-space: pre-wrap; word-break: break-all; font-size: 12.5px; padding-right: 84px; background: var(--panel-2); border-radius: 6px; }
+.plan-blocked, .plan-hint { font-size: 12.5px; padding: 6px 10px; border-radius: 6px; background: var(--amber-soft); color: var(--amber); }
+.plan-err pre { margin: 0; padding: 6px 10px; border-radius: 6px; background: var(--red-soft); color: var(--red); white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 220px; overflow: auto; }
+.plan-out .pp-text { max-height: 260px; overflow: auto; font-family: var(--mono, monospace); font-size: 12px; white-space: pre-wrap; }
+.plan-step-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.plan-temp { margin: 8px 14px 0; padding: 7px 10px; border-radius: 6px; background: var(--amber-soft); color: var(--amber); font-size: 12.5px; }
+.modal .plan-cmd pre { max-height: 180px; overflow: auto; }
+.nav-badge { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--amber-soft); color: var(--amber); font-size: 11px; font-weight: 700; }
+.hist-run { margin-bottom: 12px; }
+.hist-steps { margin: 8px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.hist-steps .plan-cmd { margin-top: 4px; }
+.notice.warn ul { margin: 4px 0 0; padding-left: 18px; }
 .draft-text { padding: 12px 14px; font-size: 14px; line-height: 1.6; color: var(--text); overflow-x: auto; overflow-wrap: anywhere; }
 .draft-text > :last-child { margin-bottom: 0; }
 
