@@ -14,10 +14,10 @@ The notes below are kept for when the agent gets write access.
 
 Input: the client or zone and what I want changed, e.g. `/plan-cloudflare-change QBE allow Dynatrace to /api/health` or `/plan-cloudflare-change ACU purge cache for www.acu.edu.au/news`. Often follows `/check-cf-block`: reuse its findings from this chat (rule, ruleset, Ray IDs, IPs) instead of looking again.
 
-You **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it. Never say anything was changed.
+You **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it.
 
 ## 1. Read the current state (read-only)
-- **Zone**: use the client code as the zone (custom hostnames like `www.qbe.com` live in the client's `*.saas.dataweavers.io` zone). `cloudflare_zones` only if unclear.
+- **Zone**: the client code (see the Cloudflare rule).
 - **Rules**: `cloudflare_get` `zones/{zoneId}/rulesets` → the entry-point ruleset for the phase (`http_request_firewall_custom`, `http_request_firewall_managed`, `http_ratelimit`), then `zones/{zoneId}/rulesets/{id}`. Note every rule's position, description, expression and action. A new rule's position matters: skip rules must come **before** the rule they bypass.
 - **DNS**: `zones/{zoneId}/dns_records?name=<host>` (type, content, proxied, TTL).
 - **Settings**: `zones/{zoneId}/settings/<name>`.

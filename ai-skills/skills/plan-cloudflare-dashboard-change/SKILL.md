@@ -10,10 +10,10 @@ mon-category: Actions
 
 Input: the client or zone and what I want changed, e.g. `/plan-cloudflare-dashboard-change QBE allow Dynatrace to /api/health` or `/plan-cloudflare-dashboard-change ACU purge cache for www.acu.edu.au/news`. Often follows `/check-cf-block`: reuse its findings from this chat (rule, ruleset, Ray IDs, IPs) instead of looking again.
 
-**I** make the change by hand in the Cloudflare dashboard. You read the current state, then write a plan precise enough that I can copy each field straight into the dashboard form. Show it with the `mcp__mon__propose_plan` tool (called `propose_plan` below). Never say anything was changed.
+**I** make the change by hand in the Cloudflare dashboard. You read the current state, then write a plan precise enough that I can copy each field straight into the dashboard form. Show it with the `mcp__mon__propose_plan` tool (called `propose_plan` below).
 
 ## 1. Read the current state (read-only)
-- **Zone**: use the client code as the zone (custom hostnames like `www.qbe.com` live in the client's `*.saas.dataweavers.io` zone). `cloudflare_zones` only if unclear.
+- **Zone**: the client code (see the Cloudflare rule).
 - **Rules**: `cloudflare_get` `zones/{zoneId}/rulesets` → the entry-point ruleset for the phase (`http_request_firewall_custom`, `http_request_firewall_managed`, `http_ratelimit`), then `zones/{zoneId}/rulesets/{id}`. Note every rule's position, description (= name in the dashboard), expression, action and enabled flag.
 - **DNS**: `zones/{zoneId}/dns_records?name=<host>` (type, content, proxied, TTL).
 - **Settings**: `zones/{zoneId}/settings/<name>`.

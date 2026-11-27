@@ -10,7 +10,7 @@ mon-category: Actions
 
 Input: the repo (or client) and what I want changed, e.g. `/plan-code-change ACU add the new redirect for /old-courses to the CD rewrite rules` or `/plan-code-change CQU bump the pipeline agent to windows-2025`.
 
-mon.ai can't change files or run git yet: you **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it. Never say anything was edited or committed.
+You **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it.
 
 ## 1. Find the repo and read the code
 - `git_repos` (filter by `org`) → the repo path, current branch, pending changes, ahead/behind. Pipelines and infra usually live in the client's `*DW-Pipelines` repo.

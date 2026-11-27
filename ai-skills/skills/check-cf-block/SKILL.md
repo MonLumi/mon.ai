@@ -8,11 +8,11 @@ mon-category: Security & blocking
 
 # Cloudflare block check
 
-Input: a ticket number, Ray ID, URL, IP or client code (e.g. `/check-cf-block 25466`, `/check-cf-block a5f72d9b6cd26ba6-SYD`). If a ticket is given, read it with `zendesk_ticket` first and pull out the Ray ID(s), URL / host / path, client IP, method, error (403, 1020, challenge page, 429) and when it happened. If this chat already has the ticket, don't reload it.
+Input: a ticket number, Ray ID, URL, IP or client code (e.g. `/check-cf-block 25466`, `/check-cf-block a5f72d9b6cd26ba6-SYD`). If a ticket is given, read it with `zendesk_ticket` first and pull out the Ray ID(s), URL / host / path, client IP, method, error (403, 1020, challenge page, 429) and when it happened.
 
 ## Steps
 
-1. **Zone**: use the client code as `zone` (custom hostnames such as `www.qbe.com` live in the client's `*.saas.dataweavers.io` zone). Use `cloudflare_zones` only if the client is unclear.
+1. **Zone**: the client code (see the Cloudflare rule).
 2. **Find the events**
    - With a Ray ID: `cloudflare_security_events` with `rayId`. One request can match several rules (e.g. a skip, then a block); list them all in order of `matchIndex`.
    - Without one: `cloudflare_security_events` filtered by `host`, `path` and/or `clientIP`, limited to the reported time window (`since` / `until`, or `hours`). If nothing comes back, widen the time window, drop the path, or add `includeSkip: true`.
@@ -30,7 +30,7 @@ Input: a ticket number, Ray ID, URL, IP or client code (e.g. `/check-cf-block 25
 - **Verdict**: blocked by *which rule* (description, ruleId, source, action), at what time, for which host / path, and whether that is correct or a false positive.
 - **Evidence**: the event(s) (Ray ID, time UTC and local, IP / ASN / country, method + path, status) and the impact numbers from step 3 in a small table.
 - **Rule**: the expression and why it matched this request.
-- **Fix** (for me to apply; mon.ai is read-only), the narrowest safe option first: an exception / skip rule scoped to the exact host + path + IP or ASN, a corrected expression, or a managed-rule override for that rule ID only. Give the exact expression to paste, which ruleset or phase to put it in and its position, and note prod vs non-prod and whether the change needs the client's approval. If the traffic is malicious, recommend keeping the block and explain why.
+- **Fix** (for me to apply), the narrowest safe option first: an exception / skip rule scoped to the exact host + path + IP or ASN, a corrected expression, or a managed-rule override for that rule ID only. Give the exact expression to paste, which ruleset or phase to put it in and its position. If the traffic is malicious, recommend keeping the block and explain why.
 - **Customer note**: one or two plain sentences for the reply.
 - **Next step**: end the answer with exactly one line on its own (the app shows it as a button):
   - no matching events, or the block can't be explained by the Cloudflare rules (e.g. it may come from Front Door WAF, the origin or the app) → list what is still unknown, then `Next: /investigate-root-cause <ticket number>`

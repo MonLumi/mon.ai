@@ -10,10 +10,10 @@ mon-category: Actions
 
 Input: a ticket number and what I want done, e.g. `/plan-ticket-change 25348 tell them the fix is live and set to pending, log 15m`. In a ticket chat without a number, use that ticket.
 
-mon.ai can't change tickets yet: you **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it. Never say anything was posted or changed.
+You **propose** a plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it.
 
 ## 1. Read the ticket first
-`zendesk_ticket` (skip if this chat loaded it in the last few messages and nothing new came in). Note: status, priority, group, assignee, requester (first name), CCs and followers, Category and other required fields, the latest comment and who it's waiting on. Put what you checked in `checks`.
+`zendesk_ticket`. Note: status, priority, group, assignee, requester (first name), CCs and followers, Category and other required fields, the latest comment and who it's waiting on. Put what you checked in `checks`.
 
 Stop and tell me instead of planning if:
 - the ticket is already solved/closed and I didn't say to reopen it;
@@ -40,8 +40,8 @@ Rules:
 - Re-assigning: use names exactly as they appear on the ticket or in earlier comments; if you can't find the person or group, ask me.
 
 ## 3. Writing the reply or note
-- **Public reply**: same rules as `/draft-customer-reply`: greet the requester by first name; friendly, clear, Australian English; what we found or did → what happens next (time frame if known) → what we need from them. Link any ticket you reference. No internal details (tenant IDs, rule IDs, internal tools, colleagues' chat). No sign-off.
-- **Internal note**: short and factual for a colleague: what was checked, the finding with evidence (Ray ID, resource, time in UTC and AEST/AEDT), what's next and who owns it.
+- **Public reply**: same rules as `/draft-customer-reply`: greet the requester by first name; friendly and clear; what we found or did → what happens next (time frame if known) → what we need from them. No internal details (tenant IDs, rule IDs, internal tools, colleagues' chat). No sign-off.
+- **Internal note**: short and factual for a colleague: what was checked, the finding with evidence (Ray ID, resource, time), what's next and who owns it.
 - Plain text, verbatim, ready to post. No placeholders; anything unknown goes in `assumptions`.
 
 ## 4. Propose

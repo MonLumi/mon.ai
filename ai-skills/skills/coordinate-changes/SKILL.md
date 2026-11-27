@@ -10,7 +10,7 @@ mon-category: Actions
 
 Input: what I want done, e.g. `/coordinate-changes QBE: unblock Dynatrace on /api/health, then tell the customer on #25348 and set it to pending`. If no ticket is named and this is a ticket chat, use that ticket.
 
-You never run anything yourself: you **propose** one plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below), I review it and run its Azure CLI steps one at a time from the card (other steps I do myself). Never say something was done.
+You **propose** one plan with the `mcp__mon__propose_plan` tool (called `propose_plan` below).
 
 This skill holds no system details; the domain skills do. Your job is to split the request, follow each domain skill, and merge the result into **one** plan.
 
