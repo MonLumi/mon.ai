@@ -550,9 +550,9 @@ const rteHasContent = (ed) => !!ed.textContent.replace(/ /g, ' ').trim() || !!e
 const rteUploads = (ed) => [...ed.querySelectorAll('img[data-zd-token]')].map((i) => i.dataset.zdToken);
 const rteUploading = (ed) => !!ed.querySelector('img.uploading');
 /**
- * Blank rows. Zendesk shows paragraphs with no gap between them, so an empty paragraph
- * (<p><br></p>, <p>&nbsp;</p>, <div><br></div>) is how a blank row between paragraphs is written:
- * keep one. Two or more in a row become one (one blank row, never two), and blank rows at the very
+ * Blank rows. Paragraphs go to Zendesk as lines with no gap between them (zdLines), so an empty
+ * paragraph (<p><br></p>, <p>&nbsp;</p>, <div><br></div>) is how a blank row between paragraphs is
+ * written: keep one. Two or more in a row become one (one blank row, never two), and blank rows at the very
  * start or end are dropped.
  */
 const BLANK_INSIDE = '(?:\\s|&nbsp;|\\u00a0|<br\\s*\\/?>)*';
@@ -561,6 +561,12 @@ const tidyBlankRows = (html) => String(html)
   .replace(new RegExp(`${EMPTY_BLOCK}(?:\\s*${EMPTY_BLOCK})+`, 'gi'), '<p><br></p>')
   .replace(new RegExp(`^(?:\\s*${EMPTY_BLOCK})+`, 'i'), '')
   .replace(new RegExp(`(?:${EMPTY_BLOCK}\\s*)+$`, 'i'), '');
+/**
+ * For Zendesk: paragraphs become plain lines (<div>). Zendesk puts a gap after every <p>, so with a
+ * blank row in between it looked like two rows; <div> lines have no gap, as in mon.ai's editor, so
+ * one blank row is exactly one row. <pre> and the like are untouched (\b stops at "pre").
+ */
+const zdLines = (html) => String(html).replace(/<p\b([^>]*)>/gi, '<div$1>').replace(/<\/p\s*>/gi, '</div>');
 /** Markdown drafts: one blank row between paragraphs, as you write them. */
 const spaceParas = (html) => String(html).replace(/<\/p>\s*<p\b/gi, '</p><p><br></p><p');
 /**
@@ -579,10 +585,10 @@ function rteHtml(ed, { preview = false } = {}) {
     n.alt = img.alt || '';
     img.replaceWith(n);
   });
-  return tidyBlankRows(DOMPurify.sanitize(c.innerHTML, {
+  return zdLines(tidyBlankRows(DOMPurify.sanitize(c.innerHTML, {
     ALLOWED_TAGS: [...RTE_TAGS, 'img'], ALLOWED_ATTR: [...RTE_ATTR, 'src', 'alt'],
     ALLOWED_URI_REGEXP: preview ? /^(https?:|mailto:|blob:|\/users\/\d+$)/i : /^(https?:|mailto:|\/users\/\d+$)/i,
-  })).trim();
+  }))).trim();
 }
 const RTE_IMG = /^image\/(png|jpeg|gif|webp|bmp)$/;
 // URLs written as plain text, without trailing punctuation such as the full stop of a sentence:
@@ -2574,7 +2580,7 @@ document.addEventListener('click', async (e) => {
   const text = b.dataset.copyText != null ? b.dataset.copyText : b.dataset.copy === 'answer'
     ? box.dataset.raw || box.querySelector('.body')?.innerText || ''
     : draft ? box.dataset.raw || box.querySelector('.draft-text').innerText : box.querySelector('pre')?.innerText || '';
-  const ok = (draft && copyRich(draftHtml(text), text)) || await copyText(text);
+  const ok = (draft && copyRich(zdLines(draftHtml(text)), text)) || await copyText(text);
   const label = b.querySelector('span');
   const old = label.textContent;
   label.textContent = ok ? 'Copied' : 'Copy failed';

@@ -650,7 +650,7 @@ button.link { border: none; background: none; color: var(--accent); cursor: poin
 .tk-note .rte-size { position: absolute; right: 22px; bottom: 4px; border: none; background: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 4px; border-radius: 5px; }
 .tk-note .rte-size:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 .rte:empty::before { content: attr(data-ph); color: var(--muted); pointer-events: none; }
-.rte p, .rte-view p { margin: 0; } /* as Zendesk shows them: a blank row between paragraphs is an empty paragraph */
+.rte p, .rte-view p { margin: 0; } /* sent to Zendesk as gap-free lines (zdLines): a blank row between paragraphs is an empty paragraph */
 .rte h1, .rte-view h1 { font-size: 20px; margin: 6px 0; } .rte h2, .rte-view h2 { font-size: 17px; margin: 6px 0; }
 .rte h3, .rte-view h3 { font-size: 15px; margin: 6px 0; } .rte h4, .rte-view h4 { font-size: 13px; margin: 6px 0; }
 .rte ul, .rte ol, .rte-view ul, .rte-view ol { margin: 4px 0; padding-left: 22px; }
