@@ -931,6 +931,8 @@ body.rte-sizing-col, body.rte-sizing-row { user-select: none; }
 .comment-html { white-space: normal; }
 .comment-html p { margin: 0 0 8px; }
 .comment-html p:last-child { margin-bottom: 0; }
+/* a blank paragraph is one blank row between paragraphs, not gap + row + gap */
+.comment-html p.zd-blank, .comment-html p:has(+ p.zd-blank) { margin-bottom: 0; }
 .comment-html img { max-width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--border); margin: 4px 0; display: block; }
 .comment-html img.zd-img { cursor: zoom-in; }
 .comment-html table { border-collapse: collapse; margin: 6px 0; font-size: 12.5px; max-width: 100%; display: block; overflow-x: auto; }

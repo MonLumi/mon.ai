@@ -1194,6 +1194,11 @@ function commentHtml(c, origin) {
     try { a.href = new URL(a.getAttribute('href'), origin || location.origin).toString(); } catch { a.removeAttribute('href'); }
     a.target = '_blank'; a.rel = 'noopener noreferrer';
   });
+  // A blank paragraph (<p><br></p>, <p>&nbsp;</p>) is a blank row: shown as exactly one row, without
+  // the paragraph gap above and below it (see .zd-blank in styles.css).
+  frag.querySelectorAll('p').forEach((p) => {
+    if (!p.textContent.replace(/ /g, ' ').trim() && !p.querySelector('img, table, hr, iframe, video')) p.classList.add('zd-blank');
+  });
   const box = document.createElement('div');
   box.className = 'comment-body comment-html';
   box.append(frag);
