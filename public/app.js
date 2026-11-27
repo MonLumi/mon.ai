@@ -3163,6 +3163,9 @@ document.addEventListener('click', async (e) => {
 /** Divider where the conversation was compacted: the older part above it was replaced by a summary (expandable). */
 function compactHtml(c, pending = false) {
   if (pending) return '<div class="msg-compact pending"><span>🗜 Compacting the conversation…</span></div>';
+  if (c.trigger === 'rebuilt') return `<div class="msg-compact"><details><summary>♻ Conversation rebuilt from mon.ai's saved messages</summary>
+    <div class="sub">Claude Code had cleaned up this chat's transcript, so the assistant continues from this recap. Tool results from before it are not included.</div>
+    ${c.summary ? `<div class="md">${md(c.summary)}</div>` : ''}</details></div>`;
   const tok = c.preTokens ? ` · ${fmtTok(c.preTokens)} → ${fmtTok(c.postTokens)} tokens` : '';
   return `<div class="msg-compact"><details><summary>🗜 Conversation compacted${c.trigger === 'auto' ? ' automatically' : ''}${tok}</summary>
     <div class="sub">From here on the assistant works from this summary instead of the full history above.</div>
