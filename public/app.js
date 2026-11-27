@@ -3440,6 +3440,70 @@ document.addEventListener('click', async (e) => {
   }
 });
 
+// ---------- Solr dashboard (offer_solr_dashboard): kubectl port-forward, started only by this click ----------
+let solrForwards = []; // active port-forwards, kept current by the k8s:forwards event
+const solrKey = (x) => `${x.context}/${x.namespace}`;
+api('/api/k8s/forwards').then((l) => { solrForwards = l || []; refreshSolrCards(); }).catch(() => {});
+
+function solrCardInner(sc) {
+  const f = solrForwards.find((x) => solrKey(x) === solrKey(sc));
+  const envPill = sc.environment === 'Prod' ? 'red' : sc.environment === 'PreProd' ? 'amber' : 'blue';
+  const sub = f
+    ? `Forwarding <a href="${esc(f.url)}" target="_blank" rel="noopener" class="mono">${esc(f.url)}</a> · stops ${esc(new Date(f.endsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}`
+    : `${esc(sc.context)} / <span class="mono">${esc(sc.namespace)}</span>. Opens a port-forward on 127.0.0.1 (kubectl, your access).`;
+  return `<div class="signin-main">
+      <span class="signin-icon">🔎</span>
+      <div><div class="signin-title">Solr dashboard · ${esc(sc.dwId)} <span class="pill ${envPill}">${esc(sc.environment || '?')}</span></div>
+      <div class="signin-sub" data-solr-msg>${sub}${sc.why ? `<br>${esc(sc.why)}` : ''}</div></div>
+    </div>
+    <div class="signin-actions">
+      ${f ? `<a class="btn small primary" href="${esc(f.url)}" target="_blank" rel="noopener">↗ Open</a><button type="button" class="btn small" data-solr-stop="${esc(f.id)}">■ Stop</button>`
+    : `<button type="button" class="btn small primary" data-solr-open>↗ Open Solr dashboard</button>`}
+    </div>`;
+}
+
+function solrCards(list = []) {
+  return list.map((sc) => `<div class="pull-card solr-card" data-solr="${esc(JSON.stringify(sc))}">${solrCardInner(sc)}</div>`).join('');
+}
+
+function refreshSolrCards() {
+  for (const card of document.querySelectorAll('.solr-card')) {
+    const sc = JSON.parse(card.dataset.solr);
+    card.classList.toggle('ok', solrForwards.some((x) => solrKey(x) === solrKey(sc)));
+    card.innerHTML = solrCardInner(sc);
+  }
+}
+
+document.addEventListener('click', async (e) => {
+  const stop = e.target.closest('[data-solr-stop]');
+  if (stop) {
+    stop.disabled = true;
+    try { await api('/api/k8s/forward/stop', { method: 'POST', body: { id: stop.dataset.solrStop } }); toast('Solr port-forward stopped'); } catch (err) { toast(err.message); stop.disabled = false; }
+    return;
+  }
+  const btn = e.target.closest('[data-solr-open]');
+  if (!btn || btn.disabled) return;
+  const card = btn.closest('.solr-card');
+  const sc = JSON.parse(card.dataset.solr);
+  // Open the window now (inside the click) so the popup blocker allows it, then point it at the forward.
+  const win = window.open('about:blank', '_blank');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Connecting…';
+  try {
+    const f = await api('/api/k8s/forward', { method: 'POST', body: { context: sc.context, namespace: sc.namespace } });
+    solrForwards = [...solrForwards.filter((x) => x.id !== f.id), f];
+    refreshSolrCards();
+    if (win) win.location.href = f.url; else window.open(f.url, '_blank');
+  } catch (err) {
+    win?.close();
+    toast(err.message);
+    btn.disabled = false;
+    btn.textContent = '↗ Open Solr dashboard';
+    const msg = card.querySelector('[data-solr-msg]');
+    if (msg) msg.textContent = err.message;
+  }
+});
+
 /** Divider where the conversation was compacted: the older part above it was replaced by a summary (expandable). */
 function compactHtml(c, pending = false) {
   if (pending) return '<div class="msg-compact pending"><span>🗜 Compacting the conversation…</span></div>';
@@ -3458,6 +3522,7 @@ function assistantHtml(c, models, running = false) {
     <div class="body md">${body ? md(body) : running && !c.plan ? '<span class="typing"><span></span><span></span><span></span></span>' : ''}</div>
     ${signinCards(c.signins)}
     ${pullCards(c.pulls)}
+    ${solrCards(c.solr)}
     ${chartCards(c.charts)}
     ${factCards(c.facts)}
     ${planCard(c.plan)}
@@ -3918,15 +3983,15 @@ async function chatPage(id, opts = {}) {
     }
     inner.insertAdjacentHTML('beforeend', `${userMsgHtml({ text, attachments: atts })}<div class="msg assistant"></div>`);
     const box = inner.lastElementChild;
-    const live = { segments: [''], tools: [], signins: [], pulls: [], charts: [], facts: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
+    const live = { segments: [''], tools: [], signins: [], pulls: [], solr: [], charts: [], facts: [], plan: null, model: null, effort: null, skill: null, errors: [], startedAt: Date.now() };
     const nearBottom = () => msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
     const paint = (running) => {
       const stick = nearBottom();
       const parts = live.segments.map((x) => x.trim()).filter(Boolean);
       const lastOpen = live.segments.at(-1).trim();
       const c = running
-        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, signins: live.signins, pulls: live.pulls, charts: live.charts, facts: live.facts, plan: live.plan, startedAt: live.startedAt }
-        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, signins: live.signins, pulls: live.pulls, charts: live.charts, facts: live.facts, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
+        ? { text: lastOpen, notes: lastOpen ? parts.slice(0, -1) : parts, tools: live.tools, signins: live.signins, pulls: live.pulls, solr: live.solr, charts: live.charts, facts: live.facts, plan: live.plan, startedAt: live.startedAt }
+        : { text: parts.at(-1) || '', notes: parts.slice(0, -1), tools: live.tools, signins: live.signins, pulls: live.pulls, solr: live.solr, charts: live.charts, facts: live.facts, plan: live.plan, model: live.model, effort: live.effort, skill: live.skill, durationMs: Date.now() - live.startedAt };
       // the step list stays as you left it (open or closed) while it runs, and folds up when done
       const was = box.querySelector('.worklog')?.open;
       box.innerHTML = assistantHtml(c, models, running) + live.errors.join('');
@@ -3962,6 +4027,7 @@ async function chatPage(id, opts = {}) {
           else if (type === 'signin') live.signins.push(data);
           else if (type === 'chart') { if (!live.charts.includes(data.id)) live.charts.push(data.id); }
           else if (type === 'pull') live.pulls = [...live.pulls.filter((x) => x.path !== data.path), data];
+          else if (type === 'solr') live.solr = [...live.solr.filter((x) => x.namespace !== data.namespace || x.context !== data.context), data];
           else if (type === 'tool_result') Object.assign(live.tools.find((x) => x.id === data.id) || {}, data);
           else if (type === 'model') { live.model = data.model; live.effort = data.effort; live.skill = data.skill; }
           else if (type === 'compacting') { if (!inner.querySelector('.msg-compact.pending')) box.insertAdjacentHTML('beforebegin', compactHtml(null, true)); }
@@ -5491,6 +5557,7 @@ es.addEventListener('chats:restored', (e) => {
   if (state.route.name === 'chat' && !state.route.id) chatList();
 });
 es.addEventListener('skills:updated', () => { skillsCache = null; if (state.route.name === 'skills' && !state.route.id) skillsPage(); });
+es.addEventListener('k8s:forwards', (e) => { solrForwards = JSON.parse(e.data) || []; refreshSolrCards(); });
 es.addEventListener('repos:updated', () => { invalidate('repos'); loadSidebar(); if (state.route.name === 'repos' && !$('#repoBody .card')) reposPage(); });
 es.addEventListener('config:changed', (e) => { const { name } = JSON.parse(e.data); invalidate('azure', 'zones'); toast(`Config “${name}” reloaded`); loadSidebar(); });
 // A terminal was opened or a subscription switched: the page that did it already showed a message.

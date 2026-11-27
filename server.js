@@ -20,6 +20,7 @@ import * as site24x7 from './lib/site24x7.js';
 import * as squadcast from './lib/squadcast.js';
 import * as clients from './lib/clients.js';
 import * as actions from './lib/actions.js';
+import * as k8s from './lib/k8s.js';
 
 const PORT = Number(process.env.PORT || 80);
 const HOST = process.env.HOST || '127.0.0.1'; // loopback only, never exposed to the network
@@ -220,6 +221,11 @@ app.post('/api/repos/scan', wrap(() => git.scan()));
 app.post('/api/repos/pull', wrap((req) => git.pull(String(req.body.path || ''))));
 app.post('/api/repos/check', wrap((req) => git.checkBehind(String(req.body.path || ''))));
 app.post('/api/repos/open', wrap((req) => git.openInVSCode(String(req.body.path || ''))));
+
+// ---------- Solr on AKS: dashboard port-forwards (started only from a card click) ----------
+app.get('/api/k8s/forwards', wrap(() => k8s.listForwards()));
+app.post('/api/k8s/forward', wrap((req) => k8s.startForward(String(req.body.namespace ? `${req.body.context}/${req.body.namespace}` : req.body.instance || ''))));
+app.post('/api/k8s/forward/stop', wrap((req) => k8s.stopForward(String(req.body.id || ''))));
 
 // ---------- Client profiles (config/clients/<CODE>.md) ----------
 app.get('/api/clients/profiles', wrap(() => ({ dir: clients.DIR, template: clients.TEMPLATE('CODE'), profiles: clients.list().map((p) => ({ ...p, text: clients.get(p.code) })) })));
