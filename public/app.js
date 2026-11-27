@@ -550,11 +550,19 @@ const rteHasContent = (ed) => !!ed.textContent.replace(/ /g, ' ').trim() || !!e
 const rteUploads = (ed) => [...ed.querySelectorAll('img[data-zd-token]')].map((i) => i.dataset.zdToken);
 const rteUploading = (ed) => !!ed.querySelector('img.uploading');
 /**
- * Empty paragraphs (<p>&nbsp;</p>, <p><br></p>) are spacers: Zendesk macros contain them between
- * lines, and Zendesk's own editor drops them because paragraphs already have spacing. Sent as they
- * are, each one shows as an extra blank line in the reply, so they are removed.
+ * Blank rows. Zendesk shows paragraphs with no gap between them, so an empty paragraph
+ * (<p><br></p>, <p>&nbsp;</p>, <div><br></div>) is how a blank row between paragraphs is written:
+ * keep one. Two or more in a row become one (one blank row, never two), and blank rows at the very
+ * start or end are dropped.
  */
-const dropEmptyParas = (html) => String(html).replace(/<p\b[^>]*>(?:\s|&nbsp;| |<br\s*\/?>)*<\/p>/gi, '');
+const BLANK_INSIDE = '(?:\\s|&nbsp;|\\u00a0|<br\\s*\\/?>)*';
+const EMPTY_BLOCK = `(?:<p\\b[^>]*>${BLANK_INSIDE}<\\/p>|<div\\b[^>]*>${BLANK_INSIDE}<\\/div>)`;
+const tidyBlankRows = (html) => String(html)
+  .replace(new RegExp(`${EMPTY_BLOCK}(?:\\s*${EMPTY_BLOCK})+`, 'gi'), '<p><br></p>')
+  .replace(new RegExp(`^(?:\\s*${EMPTY_BLOCK})+`, 'i'), '')
+  .replace(new RegExp(`(?:${EMPTY_BLOCK}\\s*)+$`, 'i'), '');
+/** Markdown drafts: one blank row between paragraphs, as you write them. */
+const spaceParas = (html) => String(html).replace(/<\/p>\s*<p\b/gi, '</p><p><br></p><p');
 /**
  * The editor's content as clean Zendesk comment HTML. Pasted images become <img src="Zendesk content_url">
  * (shown inline once their upload token goes with the comment); `preview` keeps the local copy for mon.ai's
@@ -571,7 +579,7 @@ function rteHtml(ed, { preview = false } = {}) {
     n.alt = img.alt || '';
     img.replaceWith(n);
   });
-  return dropEmptyParas(DOMPurify.sanitize(c.innerHTML, {
+  return tidyBlankRows(DOMPurify.sanitize(c.innerHTML, {
     ALLOWED_TAGS: [...RTE_TAGS, 'img'], ALLOWED_ATTR: [...RTE_ATTR, 'src', 'alt'],
     ALLOWED_URI_REGEXP: preview ? /^(https?:|mailto:|blob:|\/users\/\d+$)/i : /^(https?:|mailto:|\/users\/\d+$)/i,
   })).trim();
@@ -1513,7 +1521,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
       if (macro) { editor.innerHTML = snap.html; form.assign.value = snap.assign; setStatus(snap.chosen); } // a second macro replaces the first
       const notes = [];
       if (r.comment) {
-        const add = dropEmptyParas(rteClean(r.comment.html)); // shown as Zendesk shows it, no spacer lines
+        const add = tidyBlankRows(rteClean(r.comment.html)); // the macro's blank rows, one at most between paragraphs
         editor.innerHTML = rteHasContent(editor) ? `${editor.innerHTML}${add}` : add;
         if (!r.comment.public) { setMode('internal'); notes.push('internal note'); }
       }
@@ -2512,7 +2520,7 @@ function copyRich(html, text) {
   return ok && set;
 }
 /** A draft is Markdown, shown and copied formatted the way the Update ticket editor writes it (same tags). */
-const draftHtml = (raw) => dropEmptyParas(rteClean(tblDefaults(marked.parse(raw)))).trim();
+const draftHtml = (raw) => tidyBlankRows(spaceParas(rteClean(tblDefaults(marked.parse(raw))))).trim();
 function draftCard(text) {
   const raw = text.replace(/^\n+|\s+$/g, '');
   const card = document.createElement('div');
