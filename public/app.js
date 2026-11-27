@@ -1199,6 +1199,19 @@ document.addEventListener('click', (e) => { const img = e.target.closest('img.zd
 const tkTimerKey = (tid) => `mon.tkTimer.${tid}`;
 const tkTimerLoad = (tid) => { try { return JSON.parse(localStorage.getItem(tkTimerKey(tid)) || 'null'); } catch { return null; } };
 const tkTimerSave = (tid, v) => { try { if (v) localStorage.setItem(tkTimerKey(tid), JSON.stringify({ ...v, at: Date.now() })); else localStorage.removeItem(tkTimerKey(tid)); } catch { /* storage unavailable */ } };
+// Per-ticket unsent draft (Update ticket box): the reply/note, mode, CCs, followers, assignee, status,
+// fields and macro survive switching tickets, reloading or restarting; cleared when you Submit.
+const tkDraftKey = (tid) => `mon.tkDraft.${tid}`;
+const tkDraftLoad = (tid) => { try { return JSON.parse(localStorage.getItem(tkDraftKey(tid)) || 'null'); } catch { return null; } };
+const tkDraftSave = (tid, v) => { try { if (v) localStorage.setItem(tkDraftKey(tid), JSON.stringify({ ...v, at: Date.now() })); else localStorage.removeItem(tkDraftKey(tid)); } catch { /* storage unavailable or full */ } };
+// drafts nobody came back to for 30 days are dropped
+try {
+  for (const k of Object.keys(localStorage)) {
+    if (!k.startsWith('mon.tkDraft.')) continue;
+    const v = JSON.parse(localStorage.getItem(k) || 'null');
+    if (!v?.at || Date.now() - v.at > 30 * 864e5) localStorage.removeItem(k);
+  }
+} catch { /* storage unavailable */ }
 
 /** Ticket details and the update form, drawn into `body`. Resolves with the details (null on error). */
 async function renderZendeskPanel(id, body, { fresh = false, head = null } = {}) {
@@ -1696,7 +1709,25 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
     for (const [fid, v] of Object.entries(x.fields || {})) parts.push(fieldLabel(fid, v));
     if (parts.length && x.timeSpent) parts.push('log time');
     $('#tkSummary').innerHTML = parts.length ? `Will change: <b>${esc(parts.join(' · '))}</b>` : `Now: <b>${esc(st.label)}</b>. Change anything above, then Submit.`;
+    saveDraft();
     return x;
+  };
+  // ---- unsent draft, kept per ticket (see tkDraftSave); written on every change once restored
+  let draftReady = false;
+  const fieldVals = () => Object.fromEntries([...form.querySelectorAll('[data-field]')].map((el) => [el.dataset.field, el.value]));
+  const fields0 = fieldVals();
+  const status0 = chosen;
+  const saveDraft = () => {
+    if (!draftReady || !form.isConnected && !bigPop) return;
+    const fv = fieldVals();
+    const fieldsChanged = Object.keys(fv).some((k) => fv[k] !== fields0[k]);
+    const addFollowers = [...followersNow].filter((x) => !curFollowers.includes(x));
+    const any = rteHasContent(editor) || ccAdd.length || ccRemove.size || addFollowers.length || form.assign.value !== current
+      || chosen !== status0 || fieldsChanged || macro || mode !== 'internal';
+    if (!any) { tkDraftSave(t.id, null); return; }
+    const clone = editor.cloneNode(true);
+    clone.querySelectorAll('img.uploading').forEach((i) => i.remove()); // not uploaded yet: can't be restored
+    tkDraftSave(t.id, { html: clone.innerHTML, mode, ccAdd, ccRemove: [...ccRemove], addFollowers, assign: form.assign.value, chosen, fields: fv, macro });
   };
   const drawFollowers = () => {
     const pool = members.filter((a) => !followersNow.has(a.id));
@@ -1764,6 +1795,22 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
   pop.addEventListener('mousedown', (e) => { const it = e.target.closest('.item'); if (it) { e.preventDefault(); pick(Number(it.dataset.i)); } });
   editor.addEventListener('blur', () => setTimeout(closePop, 150));
   setMode('internal');
+  // bring back the unsent draft for this ticket, if any
+  const draft = tkDraftLoad(t.id);
+  if (draft) {
+    editor.innerHTML = draft.html || '';
+    ccAdd.splice(0, ccAdd.length, ...(draft.ccAdd || []));
+    (draft.ccRemove || []).forEach((x) => { if (curCcs.some((c) => c.id === x)) ccRemove.add(x); });
+    (draft.addFollowers || []).forEach((x) => followersNow.add(x));
+    if (draft.assign && [...form.assign.options].some((o) => o.value === draft.assign)) form.assign.value = draft.assign;
+    if (draft.chosen && editable.includes(draft.chosen)) setStatus(draft.chosen);
+    form.querySelectorAll('[data-field]').forEach((el) => { if (draft.fields && el.dataset.field in draft.fields) el.value = draft.fields[el.dataset.field]; });
+    macro = draft.macro || null; drawMacroApplied();
+    drawCcs(); drawFollowers(); showRequired();
+    setMode(draft.mode === 'public' ? 'public' : 'internal');
+  }
+  draftReady = true;
+  summarize();
 
   form.addEventListener('click', (e) => {
     const mb = e.target.closest('[data-mode]'); if (mb) { setMode(mb.dataset.mode); editor.focus(); return; }
@@ -1832,6 +1879,7 @@ async function renderZendeskPanel(id, body, { fresh = false, head = null } = {})
       await api(`/api/tickets/${t.id}/update`, { method: 'POST', body: changes });
       toast(`#${t.id} updated${changes.timeSpent ? ` · ${fmtTime(changes.timeSpent)} logged` : ''}`);
       clearInterval(timerId); tkTimerSave(t.id, null); // you updated the ticket: the next stretch starts at 0
+      draftReady = false; tkDraftSave(t.id, null);       // sent: nothing left to keep
       renderZendeskPanel(t.id, body, { head });
     } catch (err) {
       toast(err.message);
