@@ -17,8 +17,6 @@ Reply with:
 - **What's new**: one bullet per new comment, a line each (who, what they said or did).
 - **What changes**: one or two sentences: who the ticket is waiting on now, and whether the earlier conclusion or next step in this chat still holds.
 
-Then end with the recommended next actions, best first, each on its own line exactly like this (the app shows them as buttons; plain lines, not in a code block):
-
-Next: /<skill> <ticket number> [key details] — <why, in a few words>
+Then end with the recommended Next lines (ticket number plus key details).
 
 Choose only what fits (0 to 3): `/draft-customer-reply` (the customer is waiting on us), `/draft-internal-note` (a colleague needs to pick it up or be briefed), `/check-cf-block`, `/check-afd-block`, `/check-site-health`, `/investigate-ticket`, `/investigate-root-cause` (as in /triage-ticket). If nothing is needed from me now, say so and give no Next line.

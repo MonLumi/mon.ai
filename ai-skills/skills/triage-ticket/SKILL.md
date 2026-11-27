@@ -18,8 +18,7 @@ This skill **only summarises and recommends**. Do not draft a reply, do not load
    - **Waiting on**: me / customer / third party / a colleague (name them), and since when.
    - **Urgency**: SLA, priority, production impact, dates promised or go-lives mentioned.
    - **Known / unknown** (only for technical problems): what the ticket already establishes (errors, URLs, times, references such as a Ray ID or `x-azure-ref`) and what is still missing.
-3. End with the recommended next actions, best first, **one per line, each on its own line exactly like this** (the app turns them into buttons):
-   `Next: /<skill> <ticket number> [key details] — <why, in a few words>`
+3. End with the recommended Next lines (ticket number plus key details).
 
    Pick from these (1 to 4 lines; only the ones that fit):
    - `/draft-customer-reply` when the customer is waiting on us for an answer, an update or a request for information.

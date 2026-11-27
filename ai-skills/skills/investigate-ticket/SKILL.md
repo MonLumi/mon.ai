@@ -30,7 +30,7 @@ Keep it targeted: a handful of checks that test a clear hypothesis, not a sweep 
 - **Confidence**: high / medium / low, and what would confirm it.
 - **Action**: exact steps or commands for me to run.
 - **Past case**: link it if one matched.
-- **Next step**: end the answer with exactly one line on its own (the app shows it as a button):
+- **Next step** (at most one Next line):
   - cause still unclear after these checks, spans several systems, or production affected with no clear lead → list what is still unknown, then `Next: /investigate-root-cause <ticket number>`
   - cause found and the customer needs a reply → `Next: /draft-customer-reply <ticket number>`
   - otherwise no Next line.

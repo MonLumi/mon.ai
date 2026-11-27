@@ -30,4 +30,4 @@ Input: a ticket number (e.g. `/investigate-root-cause 25134`). If none is given,
 - **Fix**: exact steps or commands for me to run, in order.
 - **Prevention**: one or two follow-ups (monitoring, rule, code change, documentation) if worthwhile.
 - **Customer summary**: two or three plain-language sentences I can adapt for the client.
-- If the customer needs a reply, end the answer with this line on its own (the app shows it as a button): `Next: /draft-customer-reply <ticket number>`
+- If the customer needs a reply: `Next: /draft-customer-reply <ticket number>`

@@ -32,7 +32,7 @@ Input: a ticket number, Ray ID, URL, IP or client code (e.g. `/check-cf-block 25
 - **Rule**: the expression and why it matched this request.
 - **Fix** (for me to apply), the narrowest safe option first: an exception / skip rule scoped to the exact host + path + IP or ASN, a corrected expression, or a managed-rule override for that rule ID only. Give the exact expression to paste, which ruleset or phase to put it in and its position. If the traffic is malicious, recommend keeping the block and explain why.
 - **Customer note**: one or two plain sentences for the reply.
-- **Next step**: end the answer with exactly one line on its own (the app shows it as a button):
+- **Next step** (at most one Next line):
   - no matching events, or the block can't be explained by the Cloudflare rules (e.g. it may come from Front Door WAF, the origin or the app) → list what is still unknown, then `Next: /investigate-root-cause <ticket number>`
   - cause found and the customer needs a reply → `Next: /draft-customer-reply <ticket number>`
   - otherwise no Next line.

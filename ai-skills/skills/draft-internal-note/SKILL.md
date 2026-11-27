@@ -48,5 +48,5 @@ On top of the general draft rules:
 - Headings (`###`) only for a long note with clearly separate parts; otherwise bold labels. No horizontal rules.
 
 ## 5. After the draft
-One line saying the purpose you chose (handover / escalation / FYI / decision). If posting the note should go with a ticket change (assign, add follower, status), end with this line on its own (the app shows it as a button):
+One line saying the purpose you chose (handover / escalation / FYI / decision). If posting the note should go with a ticket change (assign, add follower, status), add this Next line:
 `Next: /plan-ticket-change <ticket number> post this internal note[, other changes] — <why>`
