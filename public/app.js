@@ -4286,7 +4286,7 @@ async function clientSettings() {
       <label class="f">Monitoring names <span class="sub">Words that pick this client's Squadcast services, comma separated (part of the name is enough). Empty: the client name. Only needed when the service isn't named after the client.</span>
         <input name="monitoring" value="${esc((cl.monitoring || []).join(', '))}" placeholder="e.g. ACU, acu.edu.au"></label>
       <details class="knowledge">
-        <summary><b>Knowledge</b> <span class="sub"><span data-kb-count>${knowledgeCount(cl.knowledge)}</span> · what is specific to this client (projects, prod domains, hosting &amp; edge, access, gotchas). The assistant reads it in this client's chats.</span></summary>
+        <summary><b>Client profile</b> <span class="sub"><span data-kb-count>${knowledgeCount(cl.knowledge)}</span> · what is specific to this client (projects, prod domains, hosting &amp; edge, access, gotchas). The assistant reads it in this client's chats.</span></summary>
         <textarea name="knowledge" class="mono" rows="14" spellcheck="false" placeholder="${esc(KNOWLEDGE_HINT)}" data-orig="${esc(cl.knowledge || '')}">${esc(cl.knowledge || '')}</textarea>
       </details>
       <div class="azure-part">
@@ -4355,7 +4355,7 @@ async function clientSettings() {
     const txt = $('.zone-add-text', c);
     if (txt) txt.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); add(txt.value.trim().toLowerCase()); } };
   }
-  // Opened from a "Saved to" fact card: jump to that client's knowledge.
+  // Opened from a "Saved to" fact card: jump to that client's profile.
   const focus = sessionStorage.getItem('mon.clientFocus');
   if (focus) {
     sessionStorage.removeItem('mon.clientFocus');
@@ -4429,7 +4429,7 @@ async function clientSettings() {
         $('[data-kb-count]', c).textContent = knowledgeCount(ta.value);
         kbSaved++;
       }
-      toast(`Saved ${seen.size} clients${kbSaved ? ` and ${kbSaved} knowledge profile${kbSaved === 1 ? '' : 's'}` : ''}`);
+      toast(`Saved ${seen.size} clients${kbSaved ? ` and ${kbSaved} client profile${kbSaved === 1 ? '' : 's'}` : ''}`);
       loadSidebar();
     } catch (err) { toast(err.message); }
   };
