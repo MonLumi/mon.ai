@@ -2376,24 +2376,29 @@ async function azurePage() {
   view.innerHTML = `<div class="page-head"><div><h1>Clients</h1><div class="sub" id="azChecked">Loading…</div></div>
     <div class="row"><input class="search" id="azFilter" placeholder="Filter clients, tenants, subscriptions…"><a class="btn" href="#/settings/clients">Edit clients</a></div></div><div id="azBody"></div>`;
   // Static: the client list from config and (cached) Cloudflare zones, so the page draws at once.
-  const [az, cf] = await Promise.all([getAzureConfig(), getZones()]);
+  const [az, cf, kb] = await Promise.all([getAzureConfig(), getZones(), api('/api/clients/profiles').catch(() => ({ profiles: [] }))]);
+  azKb.clear();
+  for (const p of kb.profiles || []) azKb.set(p.code.toLowerCase(), p.text || '');
   const zonesFor = (org) => (cf.zones || []).filter((z) => (z.client || '').toLowerCase() === org.toLowerCase());
   const profiles = [...(az.profiles || [])].sort((a, b) => a.org.localeCompare(b.org));
   $('#azBody').innerHTML = `<div class="az-grid">${profiles.map((p) => {
     const st = azStatus?.profiles?.find((x) => x.org === p.org);
-    return `<div class="card az-card" data-org="${esc(p.org)}" data-text="${esc([p.org, p.tenantId, p.subscriptions?.prod, p.subscriptionNames?.prod, p.subscriptions?.nonprod, p.subscriptionNames?.nonprod, p.ado?.orgUrl, p.vpn?.required ? 'vpn' : '', ...zonesFor(p.org).map((z) => z.name)].filter(Boolean).join(' '))}">
+    return `<div class="card az-card" data-org="${esc(p.org)}" data-text="${esc([p.org, p.tenantId, p.subscriptions?.prod, p.subscriptionNames?.prod, p.subscriptions?.nonprod, p.subscriptionNames?.nonprod, p.ado?.orgUrl, p.vpn?.required ? 'vpn' : '', ...zonesFor(p.org).map((z) => z.name)].filter(Boolean).join(' '))}" data-kb-text="${esc(kbText(p.org))}">
       <div class="az-top"><h2><a href="#/org/${encodeURIComponent(p.org)}">${esc(p.org)}</a></h2>
         ${p.vpn?.required ? '<span class="pill vpn" title="Connect Dataweavers OpenVPN first">🔒 VPN</span>' : ''}
         <span class="az-status" data-status>${signInPills(st)}</span></div>
       <div class="sub mono az-tenant">${p.tenantId ? esc(p.tenantId) : '<span class="pill amber">Tenant ID not set</span>'}</div>
       <div class="az-subs"><span><b>Prod</b> ${esc(p.subscriptionNames?.prod || p.subscriptions?.prod || '—')}</span><span><b>NonProd</b> ${esc(p.subscriptionNames?.nonprod || p.subscriptions?.nonprod || '—')}</span></div>
       ${azureActions(p, zonesFor(p.org))}
+      ${kbToggleHtml(p.org)}
     </div>`;
   }).join('') || '<div class="empty">No clients yet. <a href="#/settings/clients">Add them in Settings → Clients</a>.</div>'}</div><div class="empty" id="azNone" hidden></div>`;
   const input = $('#azFilter');
   try { input.value = sessionStorage.getItem('mon.filter.az') || ''; } catch { /* ignore */ }
   input.oninput = () => { try { sessionStorage.setItem('mon.filter.az', input.value); } catch { /* ignore */ } applyAzureFilter(); };
   applyAzureFilter();
+  // Profiles that were open last time open again.
+  for (const card of view.querySelectorAll('.az-card')) if (kbOpen().includes(card.dataset.org)) kbExpand(card, true);
   // Live: only the sign-in status needs the Azure CLI.
   refreshAzureStatus();
 }
@@ -2404,12 +2409,111 @@ function applyAzureFilter() {
   const q = input.value.trim().toLowerCase();
   let shown = 0;
   for (const card of view.querySelectorAll('.az-card')) {
-    card.hidden = !!q && !hit(q, card.dataset.text);
+    card.hidden = !!q && !hit(q, card.dataset.text, card.dataset.kbText);
     if (!card.hidden) shown++;
   }
   const none = $('#azNone');
   if (none) { none.hidden = !q || shown > 0; none.textContent = `No client matches “${q}”.`; }
 }
+// ---------- Clients page: expandable client profile (config/clients/<CODE>.md), view and edit ----------
+const azKb = new Map(); // client code (lower case) -> profile Markdown
+const kbText = (org) => azKb.get(String(org).toLowerCase()) || '';
+const kbOpen = () => { try { return JSON.parse(sessionStorage.getItem('mon.kbOpen') || '[]'); } catch { return []; } };
+const kbRemember = (org, open) => { try { sessionStorage.setItem('mon.kbOpen', JSON.stringify([...kbOpen().filter((o) => o !== org), ...(open ? [org] : [])])); } catch { /* ignore */ } };
+const kbTemplate = (org) => `# ${org}\n\n## Projects\n\n## Hosting & edge\n\n## Access\n\n## Gotchas\n`;
+function kbToggleHtml(org) {
+  return `<div class="az-kb">
+    <button type="button" class="az-kb-toggle" data-kb-toggle aria-expanded="false" title="View or edit what is specific to ${esc(org)}. The assistant reads it in this client's chats.">
+      <span class="az-kb-chev">▸</span> Client profile <span class="sub" data-kb-count>${knowledgeCount(kbText(org))}</span></button>
+    <div class="az-kb-body" hidden></div>
+  </div>`;
+}
+/** Read view of a card's profile (rendered Markdown) with an Edit button. */
+function kbPaintView(card) {
+  const org = card.dataset.org;
+  const text = kbText(org);
+  card.querySelector('[data-kb-count]').textContent = knowledgeCount(text);
+  card.dataset.kbText = text;
+  const body = card.querySelector('.az-kb-body');
+  delete body.dataset.editing;
+  body.innerHTML = `<div class="az-kb-tools"><span class="sub mono">config/clients/${esc(org)}.md</span><button type="button" class="btn small" data-kb-edit>${text ? 'Edit' : 'Write profile'}</button></div>
+    ${text ? `<div class="md az-kb-md">${md(text)}</div>` : '<div class="sub">No profile yet: projects, prod domains, hosting &amp; edge, access rules, gotchas. The assistant reads it in this client\'s chats.</div>'}`;
+}
+/** Edit view: the Markdown in a textarea, Save / Cancel. A client with no profile starts from the headings. */
+function kbPaintEdit(card) {
+  const org = card.dataset.org;
+  const body = card.querySelector('.az-kb-body');
+  body.dataset.editing = '1';
+  const text = kbText(org) || kbTemplate(org);
+  body.innerHTML = `<textarea class="mono az-kb-edit" spellcheck="false" rows="18">${esc(text)}</textarea>
+    <div class="az-kb-tools"><span class="sub">Markdown · Ctrl+Enter saves · Esc cancels</span>
+      <span class="row" style="gap:6px"><button type="button" class="btn small" data-kb-cancel>Cancel</button><button type="button" class="btn small primary" data-kb-save>Save</button></span></div>`;
+  const ta = body.querySelector('textarea');
+  ta.dataset.orig = text;
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+/** Open or fold a card's profile. An open card spans the full row so the profile has room. */
+function kbExpand(card, open) {
+  card.classList.toggle('kb-open', open);
+  card.querySelector('[data-kb-toggle]').setAttribute('aria-expanded', String(open));
+  const body = card.querySelector('.az-kb-body');
+  body.hidden = !open;
+  if (open && !body.dataset.editing) kbPaintView(card);
+  kbRemember(card.dataset.org, open);
+}
+async function kbSave(card) {
+  const ta = card.querySelector('.az-kb-edit');
+  const org = card.dataset.org;
+  card.querySelectorAll('.az-kb-body button').forEach((b) => { b.disabled = true; });
+  try {
+    // An untouched template means "no profile": save it as empty.
+    const text = ta.value.trim() === kbTemplate(org).trim() ? '' : ta.value;
+    await api(`/api/clients/profiles/${encodeURIComponent(org)}`, { method: 'PUT', body: { text } });
+    azKb.set(org.toLowerCase(), text.trim() ? text : '');
+    kbPaintView(card);
+    toast(`Saved the ${org} profile`);
+  } catch (err) {
+    toast(err.message);
+    card.querySelectorAll('.az-kb-body button').forEach((b) => { b.disabled = false; });
+  }
+}
+async function kbCancel(card) {
+  const ta = card.querySelector('.az-kb-edit');
+  if (ta && ta.value !== ta.dataset.orig && !(await confirmDialog({ title: 'Discard your changes?', intro: `Your edits to the <b>${esc(card.dataset.org)}</b> profile are not saved.`, ok: 'Discard', danger: true }))) return;
+  kbPaintView(card);
+}
+view.addEventListener('click', (e) => {
+  const card = e.target.closest('.az-card');
+  if (!card) return;
+  if (e.target.closest('[data-kb-toggle]')) {
+    const body = card.querySelector('.az-kb-body');
+    if (body.dataset.editing && !body.hidden) { card.querySelector('.az-kb-edit')?.focus(); toast('Save or cancel your edits first'); return; } // don't fold away unsaved edits
+    kbExpand(card, !card.classList.contains('kb-open'));
+  } else if (e.target.closest('[data-kb-edit]')) kbPaintEdit(card);
+  else if (e.target.closest('[data-kb-save]')) kbSave(card);
+  else if (e.target.closest('[data-kb-cancel]')) kbCancel(card);
+});
+view.addEventListener('keydown', (e) => {
+  const ta = e.target.closest?.('.az-kb-edit');
+  if (!ta) return;
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); kbSave(ta.closest('.az-card')); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); kbCancel(ta.closest('.az-card')); }
+});
+/** A profile changed elsewhere (a fact card, Settings, by hand): refresh the cards not being edited. */
+async function kbRefresh() {
+  if (!['azure', 'clients'].includes(state.route.name) || !view.querySelector('.az-card')) return;
+  const kb = await api('/api/clients/profiles').catch(() => null);
+  if (!kb) return;
+  azKb.clear();
+  for (const p of kb.profiles || []) azKb.set(p.code.toLowerCase(), p.text || '');
+  for (const card of view.querySelectorAll('.az-card')) {
+    if (card.querySelector('.az-kb-body')?.dataset.editing) continue;
+    if (card.classList.contains('kb-open')) kbPaintView(card);
+    else { card.querySelector('[data-kb-count]').textContent = knowledgeCount(kbText(card.dataset.org)); card.dataset.kbText = kbText(card.dataset.org); }
+  }
+}
+
 window.addEventListener('focus', () => { if (['azure', 'clients', 'org', 'chat', 'ticket'].includes(state.route.name)) refreshAzureStatus(); });
 
 /** Live text filter for a list page. `match(item, q)` decides, `draw(items)` renders. */
@@ -5237,6 +5341,7 @@ es.addEventListener('notifications:updated', (e) => {
 });
 es.addEventListener('zendesk:status', () => refreshDashboard().catch(() => {}));
 es.addEventListener('sessions:updated', () => loadSidebar());
+es.addEventListener('clients:updated', () => kbRefresh());
 // A solved ticket was reopened on Zendesk: its chat came back from the Archive.
 es.addEventListener('chats:restored', (e) => {
   for (const c of JSON.parse(e.data || '[]')) toast(`#${c.ticketId} was reopened (now ${c.status}): its chat is back in the sidebar. Use ↻ Zendesk in it to catch up.`);

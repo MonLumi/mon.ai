@@ -1353,3 +1353,16 @@ body.rte-sizing-col, body.rte-sizing-row { user-select: none; }
 .fact-card .fact-edit { display: grid; gap: 6px; margin-top: 6px; }
 .fact-card .fact-edit textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
 .fact-card .fact-edit input { max-width: 240px; }
+/* Clients page: expandable client profile on each card (view rendered Markdown, edit in place) */
+.az-card.kb-open { grid-column: 1 / -1; }
+.az-kb { border-top: 1px solid var(--border); margin-top: 2px; padding-top: 6px; }
+.az-kb-toggle { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; padding: 3px 0; cursor: pointer; color: var(--text); font: inherit; font-size: 13px; font-weight: 600; }
+.az-kb-toggle:hover { color: var(--accent); }
+.az-kb-toggle .sub { font-weight: 400; }
+.az-kb-chev { display: inline-block; transition: transform .15s; color: var(--muted); }
+.az-card.kb-open .az-kb-chev { transform: rotate(90deg); }
+.az-kb-body { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
+.az-kb-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.az-kb-md { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; max-height: 70vh; overflow: auto; font-size: 13.5px; }
+.az-kb-md h1 { font-size: 16px; } .az-kb-md h2 { font-size: 14.5px; } .az-kb-md h3 { font-size: 13.5px; }
+.az-kb-edit { width: 100%; box-sizing: border-box; min-height: 260px; max-height: 75vh; resize: vertical; font-size: 12.5px; line-height: 1.5; }
